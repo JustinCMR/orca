@@ -8,8 +8,14 @@ import {
 } from '@/lib/worktree-sleep-intent'
 import { translate } from '@/i18n/i18n'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
+import type { Tab } from '../../../../shared/tab-types'
 import { preserveSidebarWorktreePosition } from './sleep-worktree-sidebar-position'
-import { stopWorkspaceChats, type WorkspaceChatStop } from './sleep-workspace-chat-stop'
+import {
+  stopWorkspaceChats,
+  type WorkspaceChatStop,
+  type WorkspaceChatStopReceipt
+} from './sleep-workspace-chat-stop'
+import { isStructuredTab } from '../../../../shared/structured-agent-session-tab'
 
 /** One per host asked to stop the workspace's chats. */
 export type WorkspaceSleepResult = {
@@ -79,7 +85,9 @@ function describeChatStopFailure(): string {
 export async function runSleepWorktrees(
   worktreeIds: readonly string[]
 ): Promise<WorkspaceSleepResult[]> {
-  const { errors, results } = await sleepWorktreesReportingFailures(worktreeIds)
+  const { errors, results } = await sleepWorktreesReportingFailures(worktreeIds, {
+    recordExplicitChatSleep: true
+  })
   if (errors.length > 0) {
     // Why: callers are fire-and-forget; surface actionable teardown failures after restoring retryable UI state.
     toast.error(
@@ -100,6 +108,31 @@ export async function runSleepWorktrees(
   return results
 }
 
+/** Records the chats each host confirmed stopped; a failed chat stop leaves the workspace awake. */
+function recordExplicitChatSleep(
+  worktreeId: string,
+  receipts: readonly WorkspaceChatStopReceipt[] | null,
+  capturedChats: readonly Tab[]
+): void {
+  const store = useAppStore.getState()
+  if (!receipts) {
+    store.clearWorkspaceChatsSlept(worktreeId)
+    return
+  }
+  // Why by session id: a copy reached through a paired runtime stamps its tabs with its own host.
+  const stopped = new Set(receipts.flatMap((receipt) => receipt.stoppedSessionIds))
+  const chatsByHost = new Map<ExecutionHostId, { tabId: string; sessionId: string }[]>()
+  for (const tab of capturedChats) {
+    if (tab.executionHostId && stopped.has(tab.entityId)) {
+      const chats = chatsByHost.get(tab.executionHostId) ?? []
+      chatsByHost.set(tab.executionHostId, [...chats, { tabId: tab.id, sessionId: tab.entityId }])
+    }
+  }
+  for (const [hostId, chats] of chatsByHost) {
+    store.markWorkspaceChatsSlept(worktreeId, hostId, chats)
+  }
+}
+
 export type WorktreeSleepOutcome = {
   /** Every workspace not verifiably slept, including one whose chat stop went unconfirmed. */
   failedWorktreeIds: string[]
@@ -109,7 +142,9 @@ export type WorktreeSleepOutcome = {
 
 /** The sleep without the toast, for callers that report failures themselves. */
 export async function sleepWorktreesReportingFailures(
-  requestedWorktreeIds: readonly string[]
+  requestedWorktreeIds: readonly string[],
+  // Why: only the user's Sleep hides its chats; a project move pauses through this core too.
+  options: { recordExplicitChatSleep?: boolean } = {}
 ): Promise<WorktreeSleepOutcome> {
   // Why unique: both copies of a twin share one id, and sleeping it sleeps the whole workspace.
   const worktreeIds = [...new Set(requestedWorktreeIds)]
@@ -140,6 +175,9 @@ export async function sleepWorktreesReportingFailures(
   const chatFailedIds = new Set<string>()
   const attempts = worktreeIds.map((worktreeId) => {
     markWorktreeSleepIntent(worktreeId)
+    const capturedChats = (useAppStore.getState().unifiedTabsByWorktree[worktreeId] ?? []).filter(
+      isStructuredTab
+    )
     let chats: Promise<WorkspaceChatStop> = Promise.resolve({ receipts: [], failed: false })
     // Browser cleanup and the authoritative terminal admission run before any batch wait.
     const panels = withWorktreeSleepTeardown(worktreeId, async () => {
@@ -165,13 +203,13 @@ export async function sleepWorktreesReportingFailures(
         errors.push(describeSleepFailure(error))
       }
     )
-    return { worktreeId, settled: panels.then(() => chats) }
+    return { worktreeId, capturedChats, settled: panels.then(() => chats) }
   })
   const results: WorkspaceSleepResult[] = []
   try {
     // A VM may carry another workspace's host: settle the entire batch before suspending any.
     const chatStops = await Promise.all(attempts.map(({ settled }) => settled))
-    for (const [index, { worktreeId }] of attempts.entries()) {
+    for (const [index, { worktreeId, capturedChats }] of attempts.entries()) {
       const { receipts, failed } = chatStops[index]
       if (failed) {
         chatFailedIds.add(worktreeId)
@@ -196,6 +234,12 @@ export async function sleepWorktreesReportingFailures(
       results.push(
         ...receipts.map((receipt) => ({ workspaceId: worktreeId, ...receipt, completed: false }))
       )
+      // Why re-read the marker: a wake during the batch keeps the workspace awake.
+      const completed =
+        !failed && !failedWorktreeIds.has(worktreeId) && hasWorktreeSleepIntent(worktreeId)
+      if (options.recordExplicitChatSleep && (completed || failed)) {
+        recordExplicitChatSleep(worktreeId, completed ? receipts : null, capturedChats)
+      }
     }
   } finally {
     // Why: a failed sleep leaves the workspace awake and retryable.
