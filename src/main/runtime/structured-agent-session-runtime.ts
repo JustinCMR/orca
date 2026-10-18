@@ -95,8 +95,8 @@ export type StructuredAgentSessionRuntimeDeps = StructuredAgentSessionTransportO
   /** Which version-gated flags a Claude CLI takes; absent never passes one. */
   claudeCliFlags?: ClaudeCliFlagSupport
   /** Gives each chat a scratch folder and the visuals skill that teaches it, and sweeps folders
-   *  whose chat is gone or long unused. Wired by the real hosts only, so a test runtime never loads
-   *  the bundled skill. */
+   *  whose chat is gone. Wired by the real hosts only, so a test runtime never loads the bundled
+   *  skill. */
   nativeChatVisuals?: {
     /** Read this host's preference when a chat starts a provider process. */
     isEnabled: () => boolean

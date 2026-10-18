@@ -1,11 +1,11 @@
 // How a chat's scratch folder dies: with its chat. The host never deletes a chat record, so no
 // deletion event exists to hang cleanup on; instead every run removes each folder no chat record
 // (readable or not) maps to, so any future record deletion cleans up for free. A folder is never
-// removed for its age: a chat's visuals live as long as the chat. A failure is logged and never
-// blocks anything else.
+// removed for its age: a chat's visuals live as long as the chat, and one an older build set aside
+// as unused goes back to its chat. A failure is logged and never blocks anything else.
 
 import type { Dirent } from 'node:fs'
-import { lstat, readdir, rm } from 'node:fs/promises'
+import { lstat, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDefinitiveAbsence } from '../../shared/definitive-filesystem-absence'
 import { yieldToEventLoop } from '../../shared/event-loop-yield'
@@ -73,26 +73,43 @@ export async function sweepNativeChatVisualsFolders(
     const expired = entry.name.endsWith(EXPIRED_SUFFIX)
     const folderName = expired ? entry.name.slice(0, -EXPIRED_SUFFIX.length) : entry.name
     // A Dirent describes the entry itself, so a symlink is never followed or removed here.
-    if (
-      !entry.isDirectory() ||
-      !isNativeChatScratchFolderName(folderName) ||
-      (!expired && heldFolders.has(folderName))
-    ) {
+    if (!entry.isDirectory() || !isNativeChatScratchFolderName(folderName)) {
       continue
     }
     try {
+      if (heldFolders.has(folderName)) {
+        if (expired) {
+          await restoreSetAsideFolder(root, folderName)
+        }
+        continue
+      }
       await remove(join(root, entry.name))
       result.removed += 1
     } catch (error) {
       result.failed += 1
-      deps.logger.warn('native-chat scratch folder could not be removed', {
+      deps.logger.warn('native-chat scratch folder could not be removed or restored', {
         scope: 'nativeChatVisuals.sweep',
-        reason: expired ? 'expired' : 'no-record',
+        reason: expired ? 'set-aside' : 'no-record',
         error
       })
     }
   }
   return result
+}
+
+/** Moves a held chat's set-aside folder back unless the chat has made a new one since; that
+ *  case keeps both, as nothing here can tell which files the chat still names. */
+async function restoreSetAsideFolder(root: string, folderName: string): Promise<void> {
+  const folder = join(root, folderName)
+  try {
+    await lstat(folder)
+    return
+  } catch (error) {
+    if (!isDefinitiveAbsence(error)) {
+      throw error
+    }
+  }
+  await rename(folder + EXPIRED_SUFFIX, folder)
 }
 
 // Why minutes, not at boot: the first sweep must not compete with session restore; after that, a

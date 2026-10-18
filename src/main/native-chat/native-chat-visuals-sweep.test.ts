@@ -84,18 +84,21 @@ describe('the visuals folder sweep', () => {
     expect(existsSync(orphan)).toBe(false)
   })
 
-  it('keeps a held chat folder however long it went unused, and clears folders older builds parked', async () => {
+  it('keeps a held chat folder however long it went unused, and gives back one set aside', async () => {
     const state = stateDirectory()
     const idle = visualsFor(state, 'chat-idle')
-    const parked = `${visualsFor(state, 'chat-parked')}.expired`
-    renameSync(nativeChatScratchFolderFor(state, 'chat-parked'), parked)
+    const setAside = visualsFor(state, 'chat-set-aside')
+    renameSync(setAside, `${setAside}.expired`)
+    const orphan = visualsFor(state, 'chat-gone')
+    renameSync(orphan, `${orphan}.expired`)
     age(nativeChatScratchRootFor(state), 400)
 
-    const result = await sweepNativeChatVisualsFolders(deps(state, ['chat-idle', 'chat-parked']))
+    const result = await sweepNativeChatVisualsFolders(deps(state, ['chat-idle', 'chat-set-aside']))
 
     expect(result).toEqual({ removed: 1, failed: 0 })
     expect(readFileSync(join(idle, 'chart.html'), 'utf8')).toBe('<p>chart</p>')
-    expect(existsSync(parked)).toBe(false)
+    expect(readFileSync(join(setAside, 'chart.html'), 'utf8')).toBe('<p>chart</p>')
+    expect(existsSync(`${orphan}.expired`)).toBe(false)
   })
 
   it('removes nothing when the held chats cannot be read', async () => {
@@ -142,7 +145,7 @@ describe('the visuals folder sweep', () => {
     })
     expect(result).toEqual({ removed: 1, failed: 1 })
     expect(sweep.logger.warn).toHaveBeenCalledWith(
-      'native-chat scratch folder could not be removed',
+      'native-chat scratch folder could not be removed or restored',
       expect.objectContaining({ scope: 'nativeChatVisuals.sweep', reason: 'no-record' })
     )
   })

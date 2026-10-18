@@ -1,8 +1,9 @@
 // When a stored attachment may go, re-derived on every sweep from the disk and the claim table.
 //
 // - A part file nobody is writing (the uploader crashed or vanished) goes after an hour.
-// - An upload no message ever claimed goes after a day: its chip was removed or its draft
-//   abandoned. The sweep first marks it in the same database the claims live in, and only if no
+// - An upload no message ever claimed goes after 30 days: its chip was removed or its draft
+//   abandoned. A draft names its image by this path, so the window is how long an unsent draft
+//   keeps it. The sweep first marks it in the same database the claims live in, and only if no
 //   claim exists; a send that names it afterwards is refused instead of losing its file.
 // - A claimed upload stays while any chat holding it has a record. The host never deletes a chat
 //   today, so that is as long as its transcript.
@@ -21,7 +22,7 @@ import { AGENT_SESSION_ATTACHMENT_PART_FILE } from './agent-session-attachment-r
 import { removeQuietly, type AgentSessionAttachmentStore } from './agent-session-attachment-store'
 
 export const ABANDONED_PART_MAX_AGE_MS = 60 * 60 * 1000
-export const UNCLAIMED_ATTACHMENT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+export const UNCLAIMED_ATTACHMENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 export type AgentSessionAttachmentSweepFacts = {
   /** The host's journal connection, or null when it cannot take writes (closed, or written by a

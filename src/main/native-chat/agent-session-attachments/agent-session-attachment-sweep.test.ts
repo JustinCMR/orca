@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type Database from '../../sqlite/sync-database'
 import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
+import { AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS } from '../../../shared/agent-session-host-authority'
 import {
   closeTestJournalHostDatabases,
   openTestJournalHostDatabase
@@ -20,12 +21,13 @@ import {
 import { AgentSessionAttachmentStore } from './agent-session-attachment-store'
 import {
   sweepAgentSessionAttachments,
+  UNCLAIMED_ATTACHMENT_MAX_AGE_MS,
   type AgentSessionAttachmentSweepFacts
 } from './agent-session-attachment-sweep'
 
 const HOUR = 60 * 60 * 1000
 const NOW = Date.now()
-const OLD = 24 * HOUR + 1
+const OLD = UNCLAIMED_ATTACHMENT_MAX_AGE_MS + 1
 const SENT = '0b6f8a52-4a3e-4c4e-9a59-1d5d1f2b8c01'
 const UNSENT = '7c2d9e10-3f4a-4b5c-8d6e-2f1a0b9c8d02'
 const CARRIED = '3e1f0a9b-8c7d-4e6f-a5b4-c3d2e1f0a903'
@@ -111,13 +113,25 @@ describe('sweepAgentSessionAttachments', () => {
     expect(await remaining()).toEqual([UNSENT])
   })
 
-  it('removes an upload nobody claimed after a day, and keeps a claimed one and a fresh one', async () => {
+  it('removes an upload nobody claimed after 30 days, and keeps a claimed one and a fresh one', async () => {
     claim('session-1', await seedUpload(SENT, OLD))
     await seedUpload(UNSENT, OLD)
     await seedUpload(CARRIED, HOUR)
     const { removed } = await sweepAgentSessionAttachments(store, facts(), NOW)
     expect(removed).toEqual([join(store.rootDir, UNSENT)])
     expect(await remaining()).toEqual([SENT, CARRIED].sort())
+  })
+
+  it('keeps a paste this host stored in place once a send claims it, past the unsent window', async () => {
+    const sent = await store.storeFile('orca-paste-1-a.png', Buffer.from('png'))
+    const unsent = await store.storeFile('orca-paste-2-b.png', Buffer.from('png'))
+    claim('session-1', sent)
+    const later = NOW + UNCLAIMED_ATTACHMENT_MAX_AGE_MS + HOUR
+    const { removed } = await sweepAgentSessionAttachments(store, facts(), later)
+    expect(removed).toEqual([dirname(unsent)])
+    expect(await readFile(sent, 'utf8')).toBe('png')
+    // A queued send is retried with a new id after the host's id window; its image must remain.
+    expect(UNCLAIMED_ATTACHMENT_MAX_AGE_MS).toBeGreaterThan(AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS)
   })
 
   it('keeps an upload any chat still claims: a /clear carry is a second holder', async () => {
