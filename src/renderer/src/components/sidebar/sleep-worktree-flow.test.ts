@@ -315,4 +315,11 @@ describe('workspace sleep flow', () => {
       }
     ])
   })
+
+  it('sleeps a workspace named by both copies of a twin once', async () => {
+    await runSleepWorktrees(['wt-1', 'wt-1'])
+
+    expect(mocks.state.shutdownWorktreeTerminals).toHaveBeenCalledTimes(1)
+    expect(mocks.state.shutdownWorktreeBrowsers).toHaveBeenCalledTimes(1)
+  })
 })

@@ -66,6 +66,13 @@ export async function runSleepWorktree(
 
 function describeSleepFailure(error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error)
+  // Why first: the twin refusal names no connection problem, though it contains "terminal_".
+  if (detail.includes('ambiguous_terminal_owner')) {
+    return translate(
+      'auto.components.sidebar.sleep.worktree.flow.twin.unattributed',
+      "Orca couldn't tell which host runs this workspace's terminals, so the workspace was kept open. Reconnect its hosts and try again."
+    )
+  }
   if (detail.includes('legacy')) {
     return translate(
       'auto.components.sidebar.sleep.worktree.flow.legacy.unverified',

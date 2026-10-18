@@ -8,6 +8,7 @@ import {
   deferWorktreeContextMenuDeleteIntent
 } from './worktree-context-menu-delete-intent'
 import { runSleepWorktrees } from './sleep-worktree-flow'
+import { collectTwinHostsAlsoSlept } from './sleep-twin-confirmation'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { resolveWorktreeDisplayName } from '@/lib/worktree-default-display-name'
 import { VIRTUALIZED_SCROLL_ANCHOR_RECORD_EVENT } from '@/hooks/useVirtualizedScrollAnchor'
@@ -22,6 +23,7 @@ export function useWorktreeContextMenuCommands(args: {
   createGroupDialogActiveRef: React.MutableRefObject<boolean>
   createProjectGroup: ReturnType<typeof useAppStore.getState>['createProjectGroup']
   folderWorkspaceId: string | null
+  getState: () => ReturnType<typeof useAppStore.getState>
   isMultiContext: boolean
   moveProjectToGroup: ReturnType<typeof useAppStore.getState>['moveProjectToGroup']
   onAssignWorkspaceStatus?: (worktreeIds: readonly string[], status: string) => void
@@ -146,7 +148,14 @@ export function useWorktreeContextMenuCommands(args: {
   const sleepWorktreesAfterMenuClose = useCallback(
     (worktrees: readonly Worktree[]) => {
       args.setMenuOpenState(false)
-      window.setTimeout(() => void runSleepWorktrees(worktrees), 50)
+      const worktreeIds = worktrees.map((worktree) => worktree.id)
+      // Why confirm: a twin's copies share one id, so this also sleeps copies the user didn't pick.
+      const hostIds = collectTwinHostsAlsoSlept(args.getState(), worktrees)
+      if (hostIds.length > 0) {
+        args.openModal('confirm-sleep-twin', { worktreeIds, hostIds })
+        return
+      }
+      window.setTimeout(() => void runSleepWorktrees(worktreeIds), 50)
     },
     [args]
   )
