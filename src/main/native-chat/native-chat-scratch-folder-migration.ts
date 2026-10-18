@@ -1,18 +1,8 @@
 // Saved replies contain only filenames, so pre-rename visuals must move before the host serves reads.
-// Conflicting files stay in a recovery subfolder governed by the chat's existing retention.
+// Conflicting files stay in a recovery subfolder inside the chat's folder, so they live as long as it.
 
 import { constants } from 'node:fs'
-import {
-  copyFile,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readdir,
-  rename,
-  rmdir,
-  unlink,
-  utimes
-} from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readdir, rename, rmdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDefinitiveAbsence } from '../../shared/definitive-filesystem-absence'
 import type { StructuredAgentSessionLogger } from './agent-session-wire/structured-agent-session-logger'
@@ -111,9 +101,6 @@ export async function migrateLegacyNativeChatVisualsFolders(
       try {
         const destination = await presenceOf(to)
         if (destination === 'absent') {
-          // Set grace before moving so a timestamp failure leaves the source retryable.
-          const now = new Date()
-          await utimes(from, now, now)
           await rename(from, to)
         } else if (destination === 'directory') {
           await mergeFolder(from, to)

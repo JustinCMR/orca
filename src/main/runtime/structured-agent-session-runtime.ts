@@ -63,7 +63,6 @@ import {
 import type { ClaudeCliFlagSupport } from '../claude/claude-cli-flag-support'
 import { migrateLegacyNativeChatVisualsFolders } from '../native-chat/native-chat-scratch-folder-migration'
 import { scheduleNativeChatVisualsSweep } from '../native-chat/native-chat-visuals-sweep'
-import { readJournalSessionLastActivityAt } from '../native-chat/agent-session-journal/journal-row-table'
 
 /** Whether this profile holds a structured chat: a record or tab in the journal database. */
 export function hasPersistedStructuredAgentSessionStore(
@@ -356,9 +355,6 @@ async function installOnJournal(
     ? scheduleNativeChatVisualsSweep({
         stateDirectory: deps.stateDirectory,
         listHeldSessionIds: () => (store.readOnly ? null : store.listHeldSessionIds()),
-        lastJournalActivityAt: (sessionId) =>
-          readJournalSessionLastActivityAt(journalDatabase.db, sessionId),
-        runWhileExecutionIdle: host.runWhileExecutionIdle,
         logger: deps.logger
       })
     : undefined
