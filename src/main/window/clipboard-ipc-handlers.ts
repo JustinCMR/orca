@@ -90,9 +90,9 @@ async function saveClipboardImageBufferForTarget(
       args?.connectionId ?? null
     )
   }
-  // A local composer paste goes in this machine's chat store: a send claims it for its chat, and
-  // only an unclaimed one is ever swept.
-  if (args?.forNativeChatDraft === true && !args.connectionId) {
+  // A local structured chat's paste goes in this machine's chat store: a send claims it for its
+  // chat, and only an unclaimed one is ever swept. Any other composer paste keeps the paste folder.
+  if (args?.forNativeChatDraft === true && args.forStructuredChat === true && !args.connectionId) {
     const store = await options.localChatAttachmentStore?.().catch(() => null)
     if (store) {
       return store.storeFile(agentSessionPastedImageName(Date.now(), randomUUID()), buffer)

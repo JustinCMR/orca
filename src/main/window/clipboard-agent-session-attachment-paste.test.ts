@@ -126,7 +126,7 @@ describe('clipboard:saveImageAsTempFile for a structured chat on a paired server
   })
 })
 
-describe('clipboard:saveImageAsTempFile for a local native-chat composer', () => {
+describe('clipboard:saveImageAsTempFile for a local structured chat', () => {
   it("stores the image in this machine's attachment store, where a send can claim it", async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-local-paste-store-'))
     try {
@@ -134,7 +134,10 @@ describe('clipboard:saveImageAsTempFile for a local native-chat composer', () =>
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the image save path never reads the store.
       registerClipboardHandlers({} as never, { localChatAttachmentStore: async () => store })
 
-      const saved = await saveHandler()(event, { forNativeChatDraft: true })
+      const saved = await saveHandler()(event, {
+        forNativeChatDraft: true,
+        forStructuredChat: true
+      })
 
       expect(saved).toEqual(
         expect.stringMatching(

@@ -104,6 +104,8 @@ export const uiClipboardAndWindowControlsApi = {
     agentSessionAttachment?: AgentSessionAttachmentClipboardTarget
     /** A native-chat composer paste, kept where its draft can bring it back. */
     forNativeChatDraft?: boolean
+    /** With `forNativeChatDraft`: a structured chat on this machine, whose sends claim its pastes. */
+    forStructuredChat?: boolean
   }): Promise<string | null> => ipcRenderer.invoke('clipboard:saveImageAsTempFile', args),
   clipboardHasImage: (): Promise<boolean> => ipcRenderer.invoke('clipboard:hasImage'),
   readClipboardFilePaths: (): Promise<string[]> => ipcRenderer.invoke('clipboard:readFilePaths'),

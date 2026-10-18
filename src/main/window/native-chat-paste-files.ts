@@ -1,6 +1,6 @@
-// The folder older builds kept local native-chat pastes in. New pastes go to the chat attachment
-// store; this one is never swept, as messages already sent may name its files, and a restored
-// draft keeps only files that really are inside it.
+// Orca's folder for local native-chat pastes no send claims: a terminal-backed chat's, and every
+// paste from before structured chats used their attachment store. Never swept, since nothing tells
+// which of them a sent message names; a restore keeps only files that really are inside it.
 
 import { lstat, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
