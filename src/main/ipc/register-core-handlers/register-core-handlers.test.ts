@@ -41,6 +41,7 @@ const {
   registerGrokAccountHandlersMock,
   registerCursorAccountHandlersMock,
   registerClipboardHandlersMock,
+  registerNativeChatDropCopyKeepMock,
   setTrustedClipboardRendererWebContentsIdMock,
   registerUpdaterHandlersMock,
   registerRateLimitHandlersMock,
@@ -112,6 +113,7 @@ const {
   registerGrokAccountHandlersMock: vi.fn(),
   registerCursorAccountHandlersMock: vi.fn(),
   registerClipboardHandlersMock: vi.fn(),
+  registerNativeChatDropCopyKeepMock: vi.fn(),
   setTrustedClipboardRendererWebContentsIdMock: vi.fn(),
   registerUpdaterHandlersMock: vi.fn(),
   registerRateLimitHandlersMock: vi.fn(),
@@ -375,6 +377,10 @@ vi.mock('../cursor-accounts', () => ({
 
 vi.mock('../../window/attach-main-window-services', () => ({
   registerUpdaterHandlers: registerUpdaterHandlersMock
+}))
+
+vi.mock('../../window/native-chat-drop-copy-keep', () => ({
+  registerNativeChatDropCopyKeep: registerNativeChatDropCopyKeepMock
 }))
 
 vi.mock('../../window/clipboard-ipc-handlers', () => ({
@@ -646,6 +652,9 @@ describe('registerCoreHandlers', () => {
     expect(registerClipboardHandlersMock).toHaveBeenCalledWith(store, {
       localChatAttachmentStore: expect.any(Function)
     })
+    expect(registerNativeChatDropCopyKeepMock).toHaveBeenCalledWith(
+      registerClipboardHandlersMock.mock.calls[0][1].localChatAttachmentStore
+    )
     expect(registerUpdaterHandlersMock).toHaveBeenCalled()
     expect(setTrustedBrowserRendererWebContentsIdMock).toHaveBeenCalledWith(null)
     expect(setTrustedClipboardRendererWebContentsIdMock).toHaveBeenCalledWith(null)
