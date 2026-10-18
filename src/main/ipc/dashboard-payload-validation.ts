@@ -93,15 +93,7 @@ export function isDashboardSleepWorkspaceArgs(
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false
   }
-  if (!('worktreeId' in value)) {
-    return false
-  }
-  const hostId = 'executionHostId' in value ? value.executionHostId : undefined
-  return (
-    isBoundedString(value.worktreeId, MAX_ID_LENGTH) &&
-    (hostId === undefined ||
-      (typeof hostId === 'string' && normalizeExecutionHostId(hostId) !== null))
-  )
+  return isBoundedString((value as Record<string, unknown>).worktreeId, MAX_ID_LENGTH)
 }
 
 export function isDashboardSnapshot(value: unknown): value is DashboardSnapshot {

@@ -8,9 +8,10 @@ import {
   type AgentStatusWorktreeShutdownReason
 } from '../slices/agent-status'
 import type { TerminalSlice, TerminalStoreGet, TerminalStoreSet } from './terminal-state'
+import type { AppState } from '../types'
 import { equalStringSets, sortedUniquePtyIds } from './terminal-pty-identities'
 import { resolveRuntimeOwnerForWorktree } from '@/lib/worktree-runtime-owner'
-import { resolveTerminalTeardownOwner } from './terminal-teardown-owner'
+import { resolveTerminalTeardownOwner, type TerminalTeardownOwner } from './terminal-teardown-owner'
 import { createTerminalShutdownGuardController } from './terminal-shutdown-guards'
 import { commitTerminalShutdownState } from './terminal-shutdown-state'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
@@ -21,6 +22,20 @@ type ExactTerminalStopResult = {
   livePtyIds?: string[]
   postStopVerified?: boolean
   postStopFailure?: string
+}
+
+/** Which host must stop this worktree's terminals; Sleep reads it before stopping anything. */
+export function resolveWorktreeTerminalTeardownOwner(
+  state: AppState,
+  worktreeId: string
+): TerminalTeardownOwner {
+  const ptyIds = (state.tabsByWorktree[worktreeId] ?? []).flatMap(
+    (tab) => state.ptyIdsByTabId[tab.id] ?? []
+  )
+  return resolveTerminalTeardownOwner(
+    resolveRuntimeOwnerForWorktree(state, worktreeId),
+    sortedUniquePtyIds(ptyIds)
+  )
 }
 
 export function createTerminalShutdownActions(
@@ -38,10 +53,7 @@ export function createTerminalShutdownActions(
       )
       const expectedRuntimePtyIds = sortedUniquePtyIds(opts?.expectedRuntimePtyIds)
       const backendOwnsPtyTeardown = opts?.backendOwnsPtyTeardown === true
-      const teardownOwner = resolveTerminalTeardownOwner(
-        resolveRuntimeOwnerForWorktree(get(), worktreeId),
-        rendererShutdownPtyIds
-      )
+      const teardownOwner = resolveWorktreeTerminalTeardownOwner(get(), worktreeId)
       // Why: treating an unattributable owner as local skips the host stop yet still clears
       // bindings and writes resume records, so the agent runs on unseen and wake starts a twin.
       // A backend-owned teardown already stopped its PTYs, so it has nothing to misroute.

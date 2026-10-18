@@ -33,7 +33,6 @@ import {
   resolveCreatedTabShellOverride,
   worktreeUsesWslPath
 } from './terminal-workspace-routing'
-import { resolveTerminalWorktreeSleepOwner } from './terminal-worktree-sleep-owner'
 type TabStartupCommand = TerminalSlice['pendingStartupByTabId'][string]
 
 function normalizeTabStartupCommand(startup: TabStartupCommand): TabStartupCommand {
@@ -294,10 +293,7 @@ export function createTerminalTabCreationActions(
       }
       if (options?.initialPtyId) {
         // Why: a tab born with a live PTY (CLI/runtime create) wakes the workspace like any other bind.
-        const owner = resolveTerminalWorktreeSleepOwner(get(), worktreeId, options.initialPtyId)
-        if (owner) {
-          clearWorktreeSleepIntent(worktreeId, owner, 'bind')
-        }
+        clearWorktreeSleepIntent(worktreeId)
       }
       const shouldRecordInteraction =
         options?.recordInteraction ?? (!options?.pendingActivationSpawn && !options?.initialPtyId)

@@ -233,5 +233,4 @@ export type DashboardSpawnAgentArgs = {
  *  teardown sequence, so the pop-out only names the target. */
 export type DashboardSleepWorkspaceArgs = {
   worktreeId: string
-  executionHostId?: ExecutionHostId
 }

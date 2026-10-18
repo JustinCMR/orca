@@ -30,8 +30,6 @@ import {
 import { getRuntimeRecipeContext } from './ephemeral-vm-recipe-context'
 import { invalidateRuntimeEnvironmentTransport } from './runtime-environments/runtime-environments'
 import { attachEphemeralVmRuntimeToWorkspace } from '../ephemeral-vm-runtime-attachment'
-import { ephemeralVmMatchesWorkspaceHost } from '../../shared/ephemeral-vm-runtime-host-match'
-import type { ExecutionHostId } from '../../shared/execution-host'
 
 export type EphemeralVmCleanupCommandResult = {
   runtimeId: string
@@ -155,20 +153,14 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
 
   ipcMain.handle(
     'ephemeralVm:suspendWorkspace',
-    async (
-      _event,
-      args: { workspaceId: string; executionHostId?: ExecutionHostId }
-    ): Promise<EphemeralVmRuntimeRecord | null> => {
+    async (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> => {
       const userDataPath = app.getPath('userData')
-      const candidates = listEphemeralVmRuntimes(userDataPath).filter(
+      const runtime = listEphemeralVmRuntimes(userDataPath).find(
         (entry) =>
           entry.workspaceId === args.workspaceId &&
           entry.status !== 'cleaned' &&
-          entry.status !== 'cleanup_pending' &&
-          (!args.executionHostId ||
-            ephemeralVmMatchesWorkspaceHost(entry, args.workspaceId, args.executionHostId))
+          entry.status !== 'cleanup_pending'
       )
-      const runtime = candidates.length === 1 ? candidates[0] : null
       if (!runtime?.repoId) {
         return null
       }
@@ -197,20 +189,14 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
 
   ipcMain.handle(
     'ephemeralVm:resumeWorkspace',
-    async (
-      _event,
-      args: { workspaceId: string; executionHostId?: ExecutionHostId }
-    ): Promise<EphemeralVmRuntimeRecord | null> => {
+    async (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> => {
       const userDataPath = app.getPath('userData')
-      const candidates = listEphemeralVmRuntimes(userDataPath).filter(
+      const runtime = listEphemeralVmRuntimes(userDataPath).find(
         (entry) =>
           entry.workspaceId === args.workspaceId &&
           entry.status !== 'cleaned' &&
-          entry.status !== 'cleanup_pending' &&
-          (!args.executionHostId ||
-            ephemeralVmMatchesWorkspaceHost(entry, args.workspaceId, args.executionHostId))
+          entry.status !== 'cleanup_pending'
       )
-      const runtime = candidates.length === 1 ? candidates[0] : null
       if (!runtime?.repoId) {
         return null
       }

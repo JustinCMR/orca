@@ -3,7 +3,6 @@ import type { PublicKnownRuntimeEnvironment } from '../../shared/runtime-environ
 import type { EphemeralVmRecipeDoctorResult } from '../../shared/ephemeral-vm-recipes'
 import type { EphemeralVmRecipeResultWarning } from '../../shared/ephemeral-vm-recipe-diagnostics'
 import type { EphemeralVmRuntimeRecord } from '../../shared/ephemeral-vm-runtimes'
-import type { ExecutionHostId } from '../../shared/execution-host'
 
 export type EphemeralVmApi = {
   listRecipes: (args: { repoId: string }) => Promise<{
@@ -63,14 +62,8 @@ export type EphemeralVmApi = {
     runtimeId: string
     workspaceId: string
   }) => Promise<EphemeralVmRuntimeRecord>
-  suspendWorkspace: (args: {
-    workspaceId: string
-    executionHostId?: ExecutionHostId
-  }) => Promise<EphemeralVmRuntimeRecord | null>
-  resumeWorkspace: (args: {
-    workspaceId: string
-    executionHostId?: ExecutionHostId
-  }) => Promise<EphemeralVmRuntimeRecord | null>
+  suspendWorkspace: (args: { workspaceId: string }) => Promise<EphemeralVmRuntimeRecord | null>
+  resumeWorkspace: (args: { workspaceId: string }) => Promise<EphemeralVmRuntimeRecord | null>
   cleanup: (args: { runtimeId: string }) => Promise<EphemeralVmRuntimeRecord>
   stopCleanup: (args: { runtimeId: string }) => Promise<EphemeralVmRuntimeRecord>
   getCleanupCommand: (args: { runtimeId: string }) => Promise<{

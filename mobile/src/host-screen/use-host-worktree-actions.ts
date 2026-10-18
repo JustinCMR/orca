@@ -165,9 +165,7 @@ export function useHostWorktreeActions(args: {
         return
       }
       setSleptIds((prev) => new Set(prev).add(getWorktreeRowIdentity(item)))
-      void worktreeSleep
-        .request(client, { worktree: `id:${item.worktreeId}`, hostId: item.hostId })
-        .catch(() => null)
+      void worktreeSleep.request(client, { worktree: `id:${item.worktreeId}` }).catch(() => null)
     },
     [client, setSleptIds]
   )

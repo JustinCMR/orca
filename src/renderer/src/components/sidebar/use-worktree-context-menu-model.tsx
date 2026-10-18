@@ -142,13 +142,12 @@ export function useWorktreeContextMenuModel({
   const sleepableWorktrees = useMemo(
     () =>
       activeContextWorktrees.filter((item) =>
-        hasSleepableWorkspaceActivity(item, {
+        hasSleepableWorkspaceActivity(item.id, {
           tabsByWorktree,
           ptyIdsByTabId,
           browserTabsByWorktree,
           unifiedTabsByWorktree,
-          agentStatusByPaneKey,
-          chatOwnerState: useAppStore.getState()
+          agentStatusByPaneKey
         })
       ),
     [
@@ -170,8 +169,7 @@ export function useWorktreeContextMenuModel({
       ptyIdsByTabId,
       browserTabsByWorktree,
       unifiedTabsByWorktree,
-      agentStatusByPaneKey,
-      chatOwnerState: useAppStore.getState()
+      agentStatusByPaneKey
     }
   })
   const lineageDescendantCount = lineageMenuActions.descendants.length

@@ -5,7 +5,6 @@ import {
   consumePendingActivationSpawn,
   getPendingActivationSpawnCount
 } from './terminal-pty-identities'
-import { resolveTerminalWorktreeSleepOwner } from './terminal-worktree-sleep-owner'
 
 export function createTerminalPtyReleaseActions(
   set: TerminalStoreSet,
@@ -108,10 +107,7 @@ export function createTerminalPtyReleaseActions(
         worktreeId &&
         !wasActivationSpawn &&
         !isRemoteRuntimeMirror &&
-        !hasWorktreeSleepIntent(
-          worktreeId,
-          resolveTerminalWorktreeSleepOwner(get(), worktreeId, ptyId) ?? undefined
-        ) &&
+        !hasWorktreeSleepIntent(worktreeId) &&
         !(ptyId && get().suppressedPtyExitIds[ptyId])
       ) {
         get().bumpWorktreeActivity(worktreeId)

@@ -655,11 +655,7 @@ describe('StructuredAgentSessionStatusBridge', () => {
 
   it('keeps the host-fed chat row through Sleep and stops offering Sleep once the host lets go', async () => {
     const state = (): AppState => useAppStore.getState()
-    const sleepable = (): boolean =>
-      hasSleepableWorkspaceActivity(
-        { id: 'wt-1', hostId: 'local' },
-        { ...state(), chatOwnerState: {} }
-      )
+    const sleepable = (): boolean => hasSleepableWorkspaceActivity('wt-1', state())
     render(<StructuredAgentSessionStatusBridge />)
     await waitFor(() => expect(mocks.subscribeStatus).toHaveBeenCalledOnce())
     act(() => feed().emit({ type: 'status', session: summary({ status: 'idle', updatedAt: 2 }) }))

@@ -3,23 +3,9 @@ import { tabHasLivePty } from '../../../../shared/tab-has-live-pty'
 import type { WorktreeLineage } from '../../../../shared/worktree/lineage-types'
 import type { Worktree } from '../../../../shared/worktree/types'
 import type { Tab } from '../../../../shared/tab-types'
-import type { WorktreeRuntimeOwnerState } from '@/lib/worktree-runtime-owner-state'
-import { getWorkspaceDeleteLineage } from './workspace-delete-lineage'
 import { isStructuredTab } from '../../../../shared/structured-agent-session-tab'
 import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
-import type { WorkspaceSleepTarget } from './sleep-worktree-flow'
-import {
-  LOCAL_EXECUTION_HOST_ID,
-  parseExecutionHostId,
-  toRuntimeExecutionHostId
-} from '../../../../shared/execution-host'
-import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
-import { resolveWorktreeOperationRouteResult } from '@/lib/worktree-operation-route'
-import {
-  findIndexedFolderWorkspaceOwner,
-  findIndexedProjectGroupOwner
-} from '@/lib/worktree-runtime-owner-index'
-import { getFolderWorkspaceHostId } from './folder-workspace-host-id'
+import { getWorkspaceDeleteLineage } from './workspace-delete-lineage'
 
 type WorkspaceActivityMaps = {
   tabsByWorktree: Record<string, { id: string }[]>
@@ -27,7 +13,6 @@ type WorkspaceActivityMaps = {
   browserTabsByWorktree: Record<string, { id: string }[]>
   unifiedTabsByWorktree: Record<string, Tab[]>
   agentStatusByPaneKey: Record<string, { structuredHostOwned?: true }>
-  chatOwnerState: WorktreeRuntimeOwnerState
 }
 
 export type WorkspaceLineageMenuActions = {
@@ -37,72 +22,18 @@ export type WorkspaceLineageMenuActions = {
 }
 
 export function hasSleepableWorkspaceActivity(
-  target: WorkspaceSleepTarget,
-  {
-    tabsByWorktree,
-    ptyIdsByTabId,
-    browserTabsByWorktree,
-    unifiedTabsByWorktree,
-    agentStatusByPaneKey,
-    chatOwnerState
-  }: WorkspaceActivityMaps
+  worktreeId: string,
+  activity: WorkspaceActivityMaps
 ): boolean {
-  const worktreeId = typeof target === 'string' ? target : target.id
-  const tabs = tabsByWorktree[worktreeId] ?? []
-  const scope = parseWorkspaceKey(worktreeId)
-  const explicitHost =
-    typeof target === 'string'
-      ? undefined
-      : (target.executionHostId ??
-        (scope?.type === 'folder' && target.runtimeOwnerEnvironmentId?.trim()
-          ? toRuntimeExecutionHostId(target.runtimeOwnerEnvironmentId.trim())
-          : target.hostId))
-  const route = resolveWorktreeOperationRouteResult(chatOwnerState, worktreeId)
-  const folder =
-    scope?.type === 'folder'
-      ? findIndexedFolderWorkspaceOwner(
-          chatOwnerState.folderWorkspaces,
-          scope.folderWorkspaceId,
-          parseExecutionHostId(explicitHost)?.id
-        )
-      : null
-  const group = folder
-    ? ((explicitHost
-        ? findIndexedProjectGroupOwner(
-            chatOwnerState.projectGroups,
-            folder.projectGroupId,
-            parseExecutionHostId(explicitHost)?.id
-          )
-        : null) ??
-      findIndexedProjectGroupOwner(chatOwnerState.projectGroups, folder.projectGroupId))
-    : null
-  const selectedHost =
-    scope?.type === 'folder'
-      ? folder
-        ? target && typeof target !== 'string' && target.executionHostId
-          ? target.executionHostId
-          : getFolderWorkspaceHostId(
-              folder,
-              group ?? { connectionId: null, executionHostId: null },
-              parseExecutionHostId(
-                chatOwnerState.restoredRuntimeHostIdByWorkspaceSessionKey?.[worktreeId]
-              )?.id ?? LOCAL_EXECUTION_HOST_ID
-            )
-        : null
-      : route.kind === 'resolved'
-        ? (explicitHost ?? route.route.executionHostId)
-        : (explicitHost ?? null)
-  const hostId = parseExecutionHostId(selectedHost)?.id
+  const tabs = activity.tabsByWorktree[worktreeId] ?? []
   return (
-    tabs.some((tab) => tabHasLivePty(ptyIdsByTabId, tab.id)) ||
-    (browserTabsByWorktree[worktreeId] ?? []).length > 0 ||
+    tabs.some((tab) => tabHasLivePty(activity.ptyIdsByTabId, tab.id)) ||
+    (activity.browserTabsByWorktree[worktreeId] ?? []).length > 0 ||
     // A chat counts only while its host holds its process; a stopped one has nothing to sleep.
-    (unifiedTabsByWorktree[worktreeId] ?? []).some(
+    (activity.unifiedTabsByWorktree[worktreeId] ?? []).some(
       (tab) =>
         isStructuredTab(tab) &&
-        !!hostId &&
-        (!tab.executionHostId || tab.executionHostId === hostId) &&
-        agentStatusByPaneKey[structuredAgentSessionPaneKey(tab.id, tab.entityId)]
+        activity.agentStatusByPaneKey[structuredAgentSessionPaneKey(tab.id, tab.entityId)]
           ?.structuredHostOwned === true
     )
   )
@@ -120,7 +51,7 @@ export function getWorkspaceLineageMenuActions(args: {
     descendants,
     targets,
     sleepableTargets: targets.filter((target) =>
-      hasSleepableWorkspaceActivity(target, args.activity)
+      hasSleepableWorkspaceActivity(target.id, args.activity)
     )
   }
 }
@@ -140,8 +71,7 @@ export function useWorkspaceLineageMenuActions(
     ptyIdsByTabId,
     browserTabsByWorktree,
     unifiedTabsByWorktree,
-    agentStatusByPaneKey,
-    chatOwnerState
+    agentStatusByPaneKey
   } = activity
   return useMemo(
     () =>
@@ -155,8 +85,7 @@ export function useWorkspaceLineageMenuActions(
               ptyIdsByTabId,
               browserTabsByWorktree,
               unifiedTabsByWorktree,
-              agentStatusByPaneKey,
-              chatOwnerState
+              agentStatusByPaneKey
             }
           })
         : EMPTY_LINEAGE_MENU_ACTIONS,
@@ -169,7 +98,6 @@ export function useWorkspaceLineageMenuActions(
       ptyIdsByTabId,
       tabsByWorktree,
       unifiedTabsByWorktree,
-      chatOwnerState,
       worktrees
     ]
   )
