@@ -116,7 +116,7 @@ export function useNativeChatExternalAttachments({
     pendingChipsRef.current = pendingChips
   }, [pendingChips])
 
-  const resolveAttachmentOwner = useCallback(() => {
+  const resolveAttachmentOwner = useCallback((): NativeChatAttachmentOwner => {
     const { structuredWorktreeId, structuredSession, terminalTabId } = workspaceRef.current
     if (structuredWorktreeId && structuredSession?.runtimeEnvironmentId) {
       return resolveNativeChatRuntimeSessionAttachmentOwner({
