@@ -22,12 +22,15 @@ const out = args.out ?? 'launch-latency.jsonl'
 const shotDir = args['screenshot-dir']
 const timeoutMs = Number(args.timeout ?? 45000)
 const quietMs = Number(args.quiet ?? 1500)
-const menuLabel = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' }[agent] ?? agent
+const menuLabel = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', terminal: 'New Terminal' }[agent] ?? agent
 // Text each agent paints once its input box is up (from captured transcripts; tune per version).
 const readyPattern = {
-  claude: /\? for shortcuts|Try "|bypass permissions|Welcome to Claude|Claude Code v/i,
-  codex: /OpenAI Codex|To get started|send\s+\S*\s*newline|context left|esc to interrupt/i,
-  opencode: /ctrl\+p|tab\s+agents|opencode\s+v?\d|ctrl\+x/i
+  // Local: input-box text only; the banner paints before the input is live.
+  claude: /\? for shortcuts|Try "|bypass permissions on/i,
+  codex: /Ask Codex|\? for shortcuts|send\s+\S*\s*newline|context left/i,
+  opencode: /ctrl\+p|tab\s+agents|opencode\s+v?\d|ctrl\+x/i,
+  // Local addition: plain-terminal baseline is ready at the zsh prompt.
+  terminal: /% *$/m
 }[agent]
 
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
@@ -65,7 +68,7 @@ async function frameRate() {
 async function clickAgent() {
   await page.getByRole('button', { name: 'New tab' }).first().click({ timeout: 10000 })
   const byTitle = page.locator(`[role="menuitem"][title="Launch ${menuLabel} in a new terminal"]`).first()
-  const item = (await byTitle.count()) > 0 ? byTitle : page.getByRole('menuitem', { name: menuLabel, exact: true }).first()
+  const item = (await byTitle.count()) > 0 ? byTitle : page.getByRole('menuitem', { name: menuLabel, exact: agent !== 'terminal' }).first()
   await item.waitFor({ state: 'visible', timeout: 10000 })
   const t0 = await page.evaluate(() => performance.timeOrigin + performance.now())
   await item.click({ timeout: 10000 })
@@ -82,21 +85,32 @@ for (let run = 1; run <= runs; run += 1) {
   let probes = []
   let tabId = null
   let readyAt = null
+  let readyScreen = null
   let lastDataAt = null
   while (Date.now() - started < timeoutMs) {
     await page.waitForTimeout(100)
     probes = await page.evaluate(() => globalThis.__orcaLaunchProbe ?? [])
-    tabId = tabId ?? probes.find((p) => p.step === 'tab-created')?.key ?? null
+    // Local addition: plain terminals skip launchAgentInNewTab, so fall back to the first new pane's tab.
+    tabId = tabId ?? probes.find((p) => p.step === 'tab-created')?.key ?? (agent === 'terminal' ? probes.find((p) => p.step === 'pane-connect')?.key : null) ?? null
     const data = probes.filter((p) => p.step === 'data' && (!tabId || p.key === tabId))
     if (data.length > 0) lastDataAt = data[data.length - 1].at
-    if (readyAt === null) {
-      let text = ''
-      for (const d of data) {
-        text += ` ${d.text}`
-        if (readyPattern?.test(text)) {
-          readyAt = d.at
-          break
+    if (readyAt === null && tabId) {
+      // Local harness fix: data probes truncate each chunk to 100 chars, so match the
+      // rendered screen instead and attribute readiness to the newest chunk that preceded it.
+      const screen = await page.evaluate((id) => {
+        const manager = window.__paneManagers?.get(id)
+        const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+        if (!pane) return null
+        const buffer = pane.terminal.buffer.active
+        const rows = []
+        for (let row = 0; row < pane.terminal.rows; row += 1) {
+          rows.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? '')
         }
+        return { type: buffer.type, text: rows.join('\n') }
+      }, tabId)
+      if (screen && readyPattern?.test(screen.text) && data.length > 0) {
+        readyAt = data[data.length - 1].at
+        readyScreen = screen
       }
     }
     const now = await page.evaluate(() => performance.timeOrigin + performance.now())
@@ -112,6 +126,7 @@ for (let run = 1; run <= runs; run += 1) {
     label,
     agent,
     run,
+    t0Epoch: t0,
     platform: process.platform,
     fps,
     tabId,
@@ -131,6 +146,7 @@ for (let run = 1; run <= runs; run += 1) {
       agentReady: readyAt === null ? null : Math.round(readyAt - t0),
       lastData: lastDataAt === null ? null : Math.round(lastDataAt - t0)
     },
+    readyScreen,
     settle: settleEnd ? { frames: settleEnd.frames, sizes: settleEnd.sizes } : null,
     dataText: probes
       .filter((p) => p.step === 'data' && p.key === tabId)
