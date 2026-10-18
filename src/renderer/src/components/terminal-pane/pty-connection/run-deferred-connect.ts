@@ -2,7 +2,7 @@ import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-i
 import { createTerminalZeroDimensionsMessage } from '../../../../../shared/terminal-zero-dimensions-diagnostic'
 import { isWorktreeRemovalFenceError } from '../../../../../shared/worktree/removal-fence-error'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
-import { canMeasurePaneForFit } from '@/lib/pane-manager/pane-fit-measurability'
+import { getWindowParkVisible } from '@/lib/window-park-visibility'
 import { useAppStore } from '@/store'
 import { createCodexBackfillErrorDetector } from '../codex-backfill-error-detector'
 import { hasWorktreeSleepIntent, onWorktreeSleepIntentCleared } from '@/lib/worktree-sleep-intent'
@@ -31,9 +31,11 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
   let cwdPromiseSettled = cwdPromise === undefined
   let cwdPromiseWaitStarted = false
   let wakeWaitStarted = false
+  let deadlinePassed = false
+  let failedFitRetries = 0
 
   session.runDeferredConnect = (): void => {
-    if (session.connectStarted) {
+    if (session.connectStarted || session.disposed) {
       return
     }
     // Why: a deliberately slept workspace keeps its panes mounted, so connecting
@@ -74,10 +76,6 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
     }
     if (!cwdPromiseSettled) {
       session.cancelScheduledConnectFrame()
-      if (session.connectFallbackTimer !== null) {
-        clearTimeout(session.connectFallbackTimer)
-        session.connectFallbackTimer = null
-      }
       if (!cwdPromiseWaitStarted) {
         cwdPromiseWaitStarted = true
         void cwdPromise?.then(
@@ -101,12 +99,18 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
       }
       return
     }
-    // Why: spawn at the first real measurement, as the common pattern does; the fallback timer bounds the wait.
-    if (
-      session.connectFallbackTimer !== null &&
+    const fitCompleted = safeFit(session.pane)
+    // Visible local startup commands need their first fitted grid before a TUI can paint.
+    const waitForFit =
+      Boolean(session.paneStartup?.command || session.paneStartup?.agentLaunch) &&
       session.deps.isVisibleRef.current &&
-      !canMeasurePaneForFit(session.pane)
-    ) {
+      getWindowParkVisible() &&
+      !session.unservedSshTargetId &&
+      session.runtimeEnvironmentId === null
+    // Retained-grid fallback must not become slower while frames are available.
+    if (waitForFit && !fitCompleted && !deadlinePassed && failedFitRetries < 12) {
+      session.cancelScheduledConnectFrame()
+      failedFitRetries += 1
       session.connectFrame = requestAnimationFrame(session.runDeferredConnect)
       return
     }
@@ -116,10 +120,6 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
       clearTimeout(session.connectFallbackTimer)
       session.connectFallbackTimer = null
     }
-    if (session.disposed) {
-      return
-    }
-    safeFit(session.pane)
     session.cols = session.pane.terminal.cols
     session.rows = session.pane.terminal.rows
 
@@ -196,6 +196,7 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
 
   // Why: Wayland/CI compositors can starve rAF while timers/CDP stay responsive; the terminal must still start its PTY once.
   session.connectFallbackTimer = setTimeout(() => {
+    deadlinePassed = true
     session.connectFallbackTimer = null
     session.runDeferredConnect()
   }, 250)
