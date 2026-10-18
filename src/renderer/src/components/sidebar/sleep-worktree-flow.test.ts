@@ -386,13 +386,15 @@ describe('runSleepWorktree', () => {
     ])
   })
 
-  it('stops nothing when it cannot tell which copy runs the terminals', async () => {
+  it('stops no chat when it cannot tell which copy runs the terminals', async () => {
     mocks.state.worktreesByRepo = twinRows
+    mocks.state.shutdownWorktreeTerminals.mockRejectedValueOnce(
+      new Error('ambiguous_terminal_owner')
+    )
 
     await runSleepWorktree(twinId)
 
     expect(mocks.callChat).not.toHaveBeenCalled()
-    expect(mocks.state.shutdownWorktreeBrowsers).not.toHaveBeenCalled()
     expect(mocks.toastError).toHaveBeenCalledOnce()
   })
 

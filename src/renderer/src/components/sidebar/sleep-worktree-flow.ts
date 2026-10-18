@@ -8,7 +8,6 @@ import {
 } from '@/lib/worktree-sleep-intent'
 import { translate } from '@/i18n/i18n'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
-import { resolveWorktreeTerminalTeardownOwner } from '@/store/terminals/terminal-shutdown'
 import { preserveSidebarWorktreePosition } from './sleep-worktree-sidebar-position'
 import { stopWorkspaceChats } from './sleep-workspace-chat-stop'
 
@@ -146,15 +145,6 @@ export async function sleepWorktreesReportingFailures(
       // until an explicit wake (#10205); mark per workspace so an earlier
       // slow teardown never leaves a later, still-awake one marked.
       markWorktreeSleepIntent(worktreeId)
-      // Why first: the terminal teardown would refuse later, after browsers and chats stopped.
-      if (
-        resolveWorktreeTerminalTeardownOwner(useAppStore.getState(), worktreeId).kind === 'refused'
-      ) {
-        failedWorktreeIds.add(worktreeId)
-        errors.push(describeSleepFailure(new Error('ambiguous_terminal_owner')))
-        continue
-      }
-      const chatStop = stopWorkspaceChats(useAppStore.getState(), worktreeId)
       try {
         // Why: sleep mirrors removeWorktree's shutdown sequence — browsers first
         // so destroyPersistentWebview unregisters the Chromium guests before any
@@ -193,8 +183,10 @@ export async function sleepWorktreesReportingFailures(
         })
         failedWorktreeIds.add(worktreeId)
         errors.push(describeSleepFailure(err))
+        continue
       }
-      const { receipts, failed } = await chatStop
+      // Why after terminals: a teardown refused for an unattributable twin then stops no chat.
+      const { receipts, failed } = await stopWorkspaceChats(useAppStore.getState(), worktreeId)
       if (failed) {
         chatFailedIds.add(worktreeId)
         errors.push(describeChatStopFailure())
