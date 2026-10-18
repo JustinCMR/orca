@@ -8,7 +8,7 @@ import type {
   PreparedDroppedPaths
 } from '../../shared/native-file-drop-preparation'
 import { abortWhenRendererGone } from '../ipc/renderer-lifetime-abort'
-import { getDragTempCopyRoot, scheduleDragTempCopySweep } from './dragged-temp-file-copy'
+import { getDragTempCopyRoot } from './dragged-temp-file-copy'
 import {
   createDroppedPathPreparationQueue,
   windowDragTempCopyLane
@@ -60,7 +60,6 @@ export function registerDroppedPathPreparation(mainWindow: BrowserWindow): void 
       activePrepareHandler = undefined
     }
   })
-  scheduleDragTempCopySweep(() => getDragTempCopyRoot(app.getPath('temp')))
 }
 
 let activePrepareHandler: unknown

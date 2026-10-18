@@ -28,6 +28,7 @@ import { userNamedFileAccess } from '@/lib/local-file-access'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { findTerminalTabWorktreeId } from './native-chat-file-link'
 import { isNativeChatImageAttachmentPath } from './native-chat-image-paste'
+import { keepLocalChatDropCopies } from './native-chat-drop-copy-store'
 
 export type UseNativeChatExternalAttachmentsArgs = {
   terminalTabId: string
@@ -215,6 +216,12 @@ export function useNativeChatExternalAttachments({
           if (readable.length === 0) {
             setNotice(nativeChatAttachmentUnreadableNotice())
             return
+          }
+          if (owner.kind === 'local' && owner.structuredSessionId) {
+            readable.splice(0, readable.length, ...(await keepLocalChatDropCopies(readable)))
+            if (disabledRef.current || !ownerStillCurrent()) {
+              return
+            }
           }
           const prepared = pending.splice(0)
           attachResolvedPaths(

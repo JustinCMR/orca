@@ -1,19 +1,17 @@
-import { constants, createWriteStream, type Dir, type Stats } from 'node:fs'
-import { lstat, mkdtemp, open, opendir, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { constants, createWriteStream, type Stats } from 'node:fs'
+import { lstat, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import type { NativeFileDropCopyFailureReason } from '../../shared/native-file-drop'
+import {
+  DRAG_TEMP_COPY_ROOT_NAME,
+  type NativeFileDropCopyFailureReason
+} from '../../shared/native-file-drop'
 import {
   formatByteCeiling,
   REMOTE_IMPORT_MAX_FILE_BYTES,
   REMOTE_IMPORT_MAX_TOTAL_BYTES
 } from '../ipc/runtime-import-limits'
-import {
-  ensureOwnedTempStagingRoot,
-  getOwnedTempStagingRoot,
-  isSafeOwnedDirectory,
-  sweepExpiredOwnedDirectories
-} from './owned-temp-staging-root'
+import { ensureOwnedTempStagingRoot, getOwnedTempStagingRoot } from './owned-temp-staging-root'
 
 // Why: macOS screenshot thumbnails live in `$TMPDIR/TemporaryItems/NSIRD_*`,
 // which only processes attributed to Orca main may open. The detached PTY
@@ -21,14 +19,10 @@ import {
 
 const TEMPORARY_ITEMS_SEGMENT = 'TemporaryItems'
 const DRAG_PROVIDER_DIR_PREFIX = 'NSIRD_'
-const COPY_ROOT_NAME = 'orca-drops'
 const COPY_DIR_PREFIX = 'orca-drop-'
 const COPY_DIR_PATTERN = /^orca-drop-[A-Za-z0-9]{6}$/
-// Why: open drafts and startup prompts read the copy lazily, often days later, so
-// keep it well past the drop; the TTL still bounds what the copy budget holds.
-export const DRAG_TEMP_COPY_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const SWEEP_FIRST_DELAY_MS = 30 * 1000
-const SWEEP_INTERVAL_MS = 60 * 60 * 1000
+// Why no expiry: a copy may be what a terminal agent, a draft or a sent message still names, and
+// nothing tells which; a structured chat's composer moves its copies into the chat store instead.
 
 export type DragTempCopyEnvironment = {
   platform: NodeJS.Platform
@@ -45,7 +39,16 @@ export type DragTempCopyItemResult =
   | { sourcePath: string; status: 'failed'; reason: NativeFileDropCopyFailureReason }
 
 export function getDragTempCopyRoot(appTempRoot: string): string {
-  return getOwnedTempStagingRoot(appTempRoot, COPY_ROOT_NAME)
+  return getOwnedTempStagingRoot(appTempRoot, DRAG_TEMP_COPY_ROOT_NAME)
+}
+
+/** The `orca-drop-*` folder under `copyRoot` that holds `path` directly; null for any other path.
+ *  Lexical: callers resolve both through realpath first. */
+export function dragTempCopyDirectoryOf(copyRoot: string, path: string): string | null {
+  const segments = relative(copyRoot, path).split(sep)
+  return segments.length === 2 && COPY_DIR_PATTERN.test(segments[0])
+    ? join(copyRoot, segments[0])
+    : null
 }
 
 /** Lexical check only: whether a path could be a drag-temp file worth inspecting. */
@@ -64,11 +67,8 @@ export async function materializeDragTempPaths(
 ): Promise<DragTempCopyItemResult[]> {
   const results: DragTempCopyItemResult[] = []
   const completed = new Map<string, DragTempCopyItemResult>()
-  // Why: the budget spans every retained copy, so repeated drops cannot fill the disk.
-  let remainingBytes =
-    env.platform === 'darwin'
-      ? REMOTE_IMPORT_MAX_TOTAL_BYTES - (await measureRetainedCopyBytes(env.copyRoot))
-      : 0
+  // Why per drop: copies are never swept, so counting earlier ones would refuse every later drop.
+  let remainingBytes = env.platform === 'darwin' ? REMOTE_IMPORT_MAX_TOTAL_BYTES : 0
   try {
     for (const sourcePath of paths) {
       signal?.throwIfAborted()
@@ -91,7 +91,7 @@ export async function materializeDragTempPaths(
     signal?.throwIfAborted()
     return results
   } catch (error) {
-    // Why: a caller that gave up never hands these out; don't hold budget until the sweep.
+    // Why: a caller that gave up never hands these out, and nothing else would remove them.
     await removeCopies(completed.values())
     throw error
   }
@@ -193,75 +193,6 @@ export async function materializeDragTempPath(
     }
     return { result: classifyFailure(sourcePath, error), copiedBytes: 0 }
   }
-}
-
-/** Remove `orca-drop-*` copies older than the TTL; younger ones may still be read lazily. */
-export async function sweepExpiredDragTempCopies(
-  copyRoot: string,
-  nowMs = Date.now()
-): Promise<void> {
-  try {
-    if (!isSafeOwnedDirectory(await lstat(copyRoot))) {
-      return
-    }
-  } catch {
-    // Missing or unreadable root: nothing of ours to sweep.
-    return
-  }
-  await sweepExpiredOwnedDirectories(copyRoot, {
-    nowMs,
-    ttlMs: DRAG_TEMP_COPY_TTL_MS,
-    ownsEntry: (name) => COPY_DIR_PATTERN.test(name)
-  })
-}
-
-/** Bytes held by `orca-drop-*` copies still on disk; unreadable entries count as zero. */
-async function measureRetainedCopyBytes(copyRoot: string): Promise<number> {
-  let total = 0
-  let rootDir: Dir
-  try {
-    rootDir = await opendir(copyRoot)
-  } catch {
-    return 0
-  }
-  try {
-    for await (const entry of rootDir) {
-      if (!entry.isDirectory() || !COPY_DIR_PATTERN.test(entry.name)) {
-        continue
-      }
-      const copyDir = join(copyRoot, entry.name)
-      const names = await readdir(copyDir).catch(() => [])
-      for (const name of names) {
-        total += await lstat(join(copyDir, name)).then(
-          (stats) => (stats.isFile() ? stats.size : 0),
-          () => 0
-        )
-      }
-    }
-  } catch {
-    // A partial count still bounds growth; the next drop measures again.
-  }
-  return total
-}
-
-let sweepScheduled = false
-
-/** Sweep shortly after startup, then hourly, so a long-running app still expires copies. */
-export function scheduleDragTempCopySweep(
-  getCopyRoot: () => string,
-  platform: NodeJS.Platform = process.platform
-): void {
-  if (sweepScheduled || platform !== 'darwin') {
-    return
-  }
-  sweepScheduled = true
-  const sweep = (): void => {
-    void Promise.resolve()
-      .then(() => sweepExpiredDragTempCopies(getCopyRoot()))
-      .catch(() => undefined)
-  }
-  setTimeout(sweep, SWEEP_FIRST_DELAY_MS).unref()
-  setInterval(sweep, SWEEP_INTERVAL_MS).unref()
 }
 
 // True when the segments hold `TemporaryItems/NSIRD_*/<entry>`: something below the provider dir.

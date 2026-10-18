@@ -209,6 +209,9 @@ export type FilesystemApi = {
     uploadPathsToAgentSessionAttachments: (
       args: AgentSessionAttachmentUploadTarget & { paths: string[] }
     ) => Promise<AgentSessionAttachmentPathUploadResult>
+    /** A local structured chat's dropped drag-temp copies, moved into this machine's chat store
+     *  so its send claims them; every other path comes back unchanged, in order. */
+    keepDroppedCopiesInLocalChatStore: (paths: string[]) => Promise<string[]>
     watchWorktree: (args: { worktreePath: string; connectionId?: string }) => Promise<void>
     unwatchWorktree: (args: { worktreePath: string; connectionId?: string }) => Promise<void>
     onFsChanged: (callback: (payload: FsChangedPayload) => void) => () => void
