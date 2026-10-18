@@ -2,7 +2,6 @@ import type * as NodeFs from 'node:fs'
 import { appendFileSync } from 'node:fs'
 import {
   chmod,
-  lstat,
   mkdir,
   mkdtemp,
   readdir,
