@@ -2,7 +2,7 @@ import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-i
 import { createTerminalZeroDimensionsMessage } from '../../../../../shared/terminal-zero-dimensions-diagnostic'
 import { isWorktreeRemovalFenceError } from '../../../../../shared/worktree/removal-fence-error'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
-import { getWindowParkVisible } from '@/lib/window-park-visibility'
+import { getWindowParkVisible, subscribeWindowParkVisibility } from '@/lib/window-park-visibility'
 import { useAppStore } from '@/store'
 import { createCodexBackfillErrorDetector } from '../codex-backfill-error-detector'
 import { hasWorktreeSleepIntent, onWorktreeSleepIntentCleared } from '@/lib/worktree-sleep-intent'
@@ -33,6 +33,7 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
   let wakeWaitStarted = false
   let deadlinePassed = false
   let failedFitRetries = 0
+  let releaseHideWait: (() => void) | null = null
 
   session.runDeferredConnect = (): void => {
     if (session.connectStarted || session.disposed) {
@@ -109,12 +110,30 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
       session.runtimeEnvironmentId === null
     // Retained-grid fallback must not become slower while frames are available.
     if (waitForFit && !fitCompleted && !deadlinePassed && failedFitRetries < 12) {
+      if (releaseHideWait === null) {
+        const unsubscribe = subscribeWindowParkVisibility(() => {
+          if (!getWindowParkVisible()) {
+            session.runDeferredConnect()
+          }
+        })
+        const release = (): void => {
+          releaseHideWait = null
+          const index = session.waitTeardowns.indexOf(release)
+          if (index !== -1) {
+            session.waitTeardowns.splice(index, 1)
+          }
+          unsubscribe()
+        }
+        releaseHideWait = release
+        session.waitTeardowns.push(release)
+      }
       session.cancelScheduledConnectFrame()
       failedFitRetries += 1
       session.connectFrame = requestAnimationFrame(session.runDeferredConnect)
       return
     }
     session.connectStarted = true
+    releaseHideWait?.()
     session.cancelScheduledConnectFrame()
     if (session.connectFallbackTimer !== null) {
       clearTimeout(session.connectFallbackTimer)

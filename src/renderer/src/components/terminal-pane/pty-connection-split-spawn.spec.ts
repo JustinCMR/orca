@@ -185,24 +185,28 @@ export function registerPtyConnectionSplitSpawnTests(): void {
       'narrow-command',
       'narrow-plain',
       'narrow-remote',
-      'disposed'
+      'disposed',
+      'hide-wait',
+      'disposed-hide-wait'
     ])(
       'preserves first-fit startup and bounded fallback: %s',
       async (scenario) => {
         const visibility = scenario === 'hidden' ? 'hidden' : 'visible'
         const narrow = scenario.startsWith('narrow-')
         const pendingCwd = scenario.includes('cwd') ? createDeferred<string>() : null
-        let measurable = !pendingCwd && scenario !== 'disposed'
+        const hideWait = scenario.endsWith('hide-wait')
+        let measurable = !pendingCwd && scenario !== 'disposed' && !hideWait
         const frameCallbacks: FrameRequestCallback[] = []
         globalThis.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
           frameCallbacks.push(callback)
           return frameCallbacks.length
         })
-        vi.stubGlobal('document', {
+        const doc = Object.assign(new EventTarget(), {
           visibilityState: visibility,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn()
+          addEventListener: vi.fn(EventTarget.prototype.addEventListener),
+          removeEventListener: vi.fn(EventTarget.prototype.removeEventListener)
         })
+        vi.stubGlobal('document', doc)
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
         const { connectPanePty } = await import('./pty-connection')
@@ -244,11 +248,21 @@ export function registerPtyConnectionSplitSpawnTests(): void {
 
         if (visibility === 'visible' && scenario !== 'starved') {
           frameCallbacks.shift()?.(0)
-          if (pendingCwd || ['metrics', 'disposed', 'narrow-command'].includes(scenario)) {
+          const hideListener = doc.addEventListener.mock.calls.at(-1)?.[1]
+          if (pendingCwd || hideWait || ['metrics', 'disposed', 'narrow-command'].includes(scenario)) {
             expect(transport.connect).not.toHaveBeenCalled()
           }
           if (scenario.startsWith('disposed')) {
             binding.dispose()
+          }
+          if (hideWait) {
+            doc.visibilityState = 'hidden'
+            doc.dispatchEvent(new Event('visibilitychange'))
+            expect(transport.connect).toHaveBeenCalledTimes(scenario.startsWith('disposed') ? 0 : 1)
+            expect(doc.removeEventListener).toHaveBeenCalledWith('visibilitychange', hideListener)
+            if (typeof hideListener === 'function') {
+              hideListener(new Event('visibilitychange'))
+            }
           }
           if (scenario === 'late-cwd') {
             vi.advanceTimersByTime(250)
@@ -281,7 +295,9 @@ export function registerPtyConnectionSplitSpawnTests(): void {
         expect(createdTransportOptions[0]?.command).toBe(startup?.command)
         expect(transport.connect).toHaveBeenCalledWith(
           expect.objectContaining(
-            narrow || scenario === 'late-cwd' ? { cols: 80, rows: 24 } : { cols: 120, rows: 40 }
+            narrow || hideWait || scenario === 'late-cwd'
+              ? { cols: 80, rows: 24 }
+              : { cols: 120, rows: 40 }
           )
         )
       }
