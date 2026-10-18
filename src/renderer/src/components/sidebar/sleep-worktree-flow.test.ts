@@ -21,8 +21,8 @@ const mocks = vi.hoisted(() => {
     shutdownWorktreeTerminals: vi.fn().mockResolvedValue(undefined),
     suppressPtyExit: vi.fn(),
     consumeSuppressedPtyExit: vi.fn(),
-    tabsByWorktree: {} as Record<string, { id: string }[]>,
-    ptyIdsByTabId: {} as Record<string, string[]>,
+    tabsByWorktree: {},
+    ptyIdsByTabId: {},
     worktreesByRepo: {},
     detectedWorktreesByRepo: {}
   }

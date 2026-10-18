@@ -12,10 +12,10 @@ const mocks = vi.hoisted(() => {
         state.ptyIdsByTabId[tab.id] = []
       }
     }),
-    tabsByWorktree: {} as Record<string, { id: string }[]>,
-    ptyIdsByTabId: {} as Record<string, string[]>,
     worktreesByRepo: {},
-    detectedWorktreesByRepo: {}
+    detectedWorktreesByRepo: {},
+    tabsByWorktree: {} as Record<string, { id: string }[]>,
+    ptyIdsByTabId: {} as Record<string, string[]>
   }
   const activateAndRevealWorktree = vi.fn()
   const activateAndRevealFolderWorkspace = vi.fn()
