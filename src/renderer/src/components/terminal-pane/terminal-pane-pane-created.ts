@@ -1,3 +1,4 @@
+import { launchProbe } from '../../../../shared/launch-probe'
 import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 import type { PaneSpawnHints } from '@/lib/pane-manager/pane-manager-types'
 import { useAppStore } from '@/store'
@@ -174,6 +175,7 @@ export function createTerminalPaneCreatedHandler(
       () => useAppStore.getState().consumeTabStartupCommand(deps.tabId),
       () => useAppStore.getState().pendingStartupByTabId[deps.tabId] === startup
     )
+    launchProbe('pane-connect', deps.tabId, { paneId: pane.id, hasStartup: Boolean(startup) })
     const panePtyBinding = connectPanePty(pane, manager, {
       ...ptyDeps,
       ...(onQueuedStartupSpawned ? { onQueuedStartupSpawned } : {}),

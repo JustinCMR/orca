@@ -1,3 +1,4 @@
+import { launchProbe } from '../../../../../shared/launch-probe'
 import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-id'
 import type { ManagedPaneInternal } from '@/lib/pane-manager/pane-manager-types'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
@@ -216,10 +217,12 @@ export function installPtyResizeGeometry(session: ConnectPanePtySession): void {
     session.runtimeEnvironmentId === null
   session.settleStartupGridBeforeConnect = (connect: () => void): void => {
     session.startupGridSettleHandle?.cancel()
+    const probeFrames: ({ cols: number; rows: number } | null)[] = []
     let settled = false
     let unsubscribeWindowVisibility = (): void => {}
     const finish = (): void => {
       settled = true
+      launchProbe('settle-end', session.deps.tabId, { paneId: session.pane.id, frames: probeFrames.length, sizes: probeFrames.map((d) => (d ? `${d.cols}x${d.rows}` : '-')).join(',') })
       unsubscribeWindowVisibility()
       session.startupGridSettleHandle = null
       connect()
@@ -228,7 +231,11 @@ export function installPtyResizeGeometry(session: ConnectPanePtySession): void {
     // has settled; spawn from a briefly stable grid so the TUI paints cleanly.
     const handle = waitForStableStartupGrid({
       isAlive: () => !session.disposed,
-      measure: session.measureStartupGrid,
+      measure: () => {
+        const d = session.measureStartupGrid()
+        probeFrames.push(d)
+        return d
+      },
       onSettled: finish,
       requestFrame: (callback) => requestAnimationFrame(callback),
       cancelFrame: (handle) => {

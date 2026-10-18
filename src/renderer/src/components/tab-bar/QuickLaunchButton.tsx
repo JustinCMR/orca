@@ -1,3 +1,4 @@
+import { launchProbe } from '../../../../shared/launch-probe'
 import React, { useCallback } from 'react'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -101,6 +102,7 @@ function QuickLaunchAgentMenuItemsInner({
         return
       }
       const entry = getCatalogEntry(agent)
+      launchProbe('click', 'global', { agent })
       const label = entry?.label ?? agent
       const result = launchAgentInNewTab({
         requestId: newAgentLaunchRequestId(),

@@ -1,3 +1,4 @@
+import { launchProbe } from '../../../../../shared/launch-probe'
 import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-id'
 import { createTerminalZeroDimensionsMessage } from '../../../../../shared/terminal-zero-dimensions-diagnostic'
 import { isWorktreeRemovalFenceError } from '../../../../../shared/worktree/removal-fence-error'
@@ -35,6 +36,7 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
     if (session.connectStarted) {
       return
     }
+    launchProbe('deferred-connect-run', session.deps.tabId, { paneId: session.pane.id, visible: session.deps.isVisibleRef.current, docVisible: document.visibilityState })
     // Why: a deliberately slept workspace keeps its panes mounted, so connecting
     // would reattach the retained session id and respawn the shell (#10205).
     // Wait for the wake instead; a queued startup is an explicit launch.
@@ -106,6 +108,7 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
         clearTimeout(session.connectFallbackTimer)
         session.connectFallbackTimer = null
       }
+      launchProbe('settle-start', session.deps.tabId, { paneId: session.pane.id })
       session.settleStartupGridBeforeConnect(() => {
         session.startupGridSettledForConnect = true
         session.runDeferredConnect()
@@ -166,6 +169,7 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
     // that drives lastTitle parity for mobile subscribers. Wires the resulting
     // unregister into onDataDisposable.dispose so disposal stays a single
     // teardown point. See docs/mobile-prefer-renderer-scrollback.md.
+    launchProbe('connect-start', session.deps.tabId, { paneId: session.pane.id, cols: session.cols, rows: session.rows, hasStartup: Boolean(session.paneStartup) })
     bindRegisterPaneSerializer(session)
     bindSettlePaneSerializer(session)
     bindBuildColdRestoreAgentResumeStartup(session)
@@ -197,6 +201,7 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
   }
 
   // Why: Wayland/CI compositors can starve rAF while timers/CDP stay responsive; the terminal must still start its PTY once.
+  launchProbe('connect-scheduled', session.deps.tabId, { paneId: session.pane.id })
   session.connectFallbackTimer = setTimeout(session.runDeferredConnect, 250)
   session.connectFrame = requestAnimationFrame(session.runDeferredConnect)
 }

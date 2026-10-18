@@ -1,3 +1,4 @@
+import { launchProbe } from '../../../../../shared/launch-probe'
 import type { SpawnDeferralReason } from '../../../../../shared/host-spawn-admission'
 import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-id'
 import { useAppStore } from '@/store'
@@ -95,6 +96,7 @@ export function bindStartFreshSpawn(session: ConnectPanePtySession): void {
       session.reportError,
       toProcessExitStartup(coldRestoreOverride ?? effectiveStartup)
     )
+    launchProbe('transport-connect', session.deps.tabId, { paneId: session.pane.id, cols: session.cols, rows: session.rows })
     const spawnedRaw = session.transport.connect({
       url: '',
       cols: session.cols,
@@ -139,6 +141,7 @@ export function bindStartFreshSpawn(session: ConnectPanePtySession): void {
             : typeof spawnedPtyId === 'string'
               ? spawnedPtyId
               : session.transport.getPtyId()
+        launchProbe('spawn-resolved', session.deps.tabId, { paneId: session.pane.id, ptyId: resolvedPtyId })
         const deferral: SpawnDeferralReason | null = resolvedPtyId
           ? null
           : session.pendingSpawnDeferral

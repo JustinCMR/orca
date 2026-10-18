@@ -151,6 +151,7 @@ async function spawnAndPublishSession(
   // Why before the fork: the shell's own cwd may already have fallen back, so probe the requested path.
   const cwdReadableByDaemon =
     opts.cwd && !wslDistro ? await isCwdReadableByThisProcess(opts.cwd) : null
+  deps.reportReadinessEvent?.('probe-subprocess-spawn-start', { sessionId: opts.sessionId, epochMs: Date.now() })
   const subprocess = await deps.spawnSubprocess({
     sessionId: opts.sessionId,
     cols: size.cols,
@@ -225,6 +226,7 @@ async function spawnAndPublishSession(
   onPublished(opts.sessionId, session.isAlive)
   const token = session.attachClient(opts.streamClient)
 
+  deps.reportReadinessEvent?.('probe-session-published', { sessionId: opts.sessionId, epochMs: Date.now() })
   const startupCommandWritten =
     Boolean(opts.command) && !subprocess.startupCommandDeliveredInShellArgs
   // Why: without this, a missing command and a lost one log identically.

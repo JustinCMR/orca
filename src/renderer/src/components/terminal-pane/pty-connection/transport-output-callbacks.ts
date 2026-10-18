@@ -1,3 +1,4 @@
+import { launchProbe } from '../../../../../shared/launch-probe'
 import type { SpawnDeferralReason } from '../../../../../shared/host-spawn-admission'
 import { createTerminalStartupTiming } from '../terminal-startup-timing'
 import type { PtyReplayDataMeta, PtyTransportRecoveryState } from '../pty-transport-types'
@@ -28,6 +29,7 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
       // stream's queued callback runs; only the registered transport may
       // mutate pane-scoped error/recovery state.
       session.deps.paneTransportsRef.current.get(session.pane.id) === session.transport
+    let probeDataCount = 0
     session.startupTiming?.finish('replaced')
     session.startupTiming = createTerminalStartupTiming({
       paneKey: session.cacheKey,
@@ -48,6 +50,7 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
         onConnect: (): void => {
           if (isCurrent()) {
             session.startupTiming?.mark('connected')
+            launchProbe('connected', session.deps.tabId, { paneId: session.pane.id })
             session.reportRemoteRendererSerializerReady()
             // Re-derive the pause bit after a rebind; visibility can change while no PTY is bound.
             session.syncHiddenRendererPtyDelivery()
@@ -62,6 +65,10 @@ export function bindCaptureTransportOutputCallbacks(session: ConnectPanePtySessi
           if (isCurrent()) {
             if (data.length > 0) {
               session.startupTiming?.mark('liveData')
+              if (probeDataCount < 60) {
+                probeDataCount += 1
+                launchProbe('data', session.deps.tabId, { paneId: session.pane.id, n: probeDataCount, len: data.length, text: data.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|[\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').slice(0, 100) })
+              }
             }
             processExitState.detector.observe(data)
             session.dataCallback(data, meta, generation)
