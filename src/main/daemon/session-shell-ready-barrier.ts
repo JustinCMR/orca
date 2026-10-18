@@ -181,6 +181,7 @@ export class SessionShellReadyBarrier {
   }
 
   private transitionToReady(postMarkerBytesObserved = false): void {
+    this.reportReadiness('probe-shell-ready', { epochMs: Date.now(), queued: this.preReadyStdinQueue.length })
     this._state = 'ready'
     this.scanState = null
     this.disposePromptReadinessProbe()
@@ -241,6 +242,7 @@ export class SessionShellReadyBarrier {
   }
 
   private flushPreReadyQueue(): void {
+    this.reportReadiness('probe-startup-flushed', { epochMs: Date.now(), queued: this.preReadyStdinQueue.length })
     const queued = this.preReadyStdinQueue
     this.preReadyStdinQueue = []
     for (const data of queued) {
