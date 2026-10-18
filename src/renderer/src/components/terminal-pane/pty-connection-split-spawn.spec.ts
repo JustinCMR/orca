@@ -175,26 +175,20 @@ export function registerPtyConnectionSplitSpawnTests(): void {
       }
     })
 
-    it.each(['before', 'during'] as const)(
-      'spawns a startup command without waiting for frames when the window is hidden %s the grid settle',
-      async (hiddenWhen) => {
+    it.each(['visible', 'hidden'] as const)(
+      'spawns a startup command at the measured grid without a settle wait when the window is %s',
+      async (visibility) => {
         // A hidden window produces no animation frames, so only the queued ones below ever run.
         const frameCallbacks: FrameRequestCallback[] = []
         globalThis.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
           frameCallbacks.push(callback)
           return frameCallbacks.length
         })
-        const visibilityListeners: (() => void)[] = []
-        const fakeDocument = {
-          visibilityState: hiddenWhen === 'before' ? 'hidden' : 'visible',
-          addEventListener: vi.fn((type: string, listener: () => void) => {
-            if (type === 'visibilitychange') {
-              visibilityListeners.push(listener)
-            }
-          }),
+        vi.stubGlobal('document', {
+          visibilityState: visibility,
+          addEventListener: vi.fn(),
           removeEventListener: vi.fn()
-        }
-        vi.stubGlobal('document', fakeDocument)
+        })
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
         const { connectPanePty } = await import('./pty-connection')
@@ -212,17 +206,10 @@ export function registerPtyConnectionSplitSpawnTests(): void {
         const args = [pane, createManager(1), deps] as unknown as Parameters<typeof connectPanePty>
         connectPanePty(...args)
 
-        if (hiddenWhen === 'before') {
-          vi.advanceTimersByTime(250)
+        if (visibility === 'visible') {
+          frameCallbacks.shift()?.(0)
         } else {
-          for (let i = 0; i < 3; i++) {
-            frameCallbacks.shift()?.(0)
-          }
-          expect(transport.connect).not.toHaveBeenCalled()
-          fakeDocument.visibilityState = 'hidden'
-          for (const listener of visibilityListeners) {
-            listener()
-          }
+          vi.advanceTimersByTime(250)
         }
 
         expect(createdTransportOptions[0]?.command).toBe('claude')

@@ -2,6 +2,7 @@ import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-i
 import { createTerminalZeroDimensionsMessage } from '../../../../../shared/terminal-zero-dimensions-diagnostic'
 import { isWorktreeRemovalFenceError } from '../../../../../shared/worktree/removal-fence-error'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
+import { canMeasurePaneForFit } from '@/lib/pane-manager/pane-fit-measurability'
 import { useAppStore } from '@/store'
 import { createCodexBackfillErrorDetector } from '../codex-backfill-error-detector'
 import { hasWorktreeSleepIntent, onWorktreeSleepIntentCleared } from '@/lib/worktree-sleep-intent'
@@ -100,16 +101,13 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
       }
       return
     }
-    if (!session.startupGridSettledForConnect && session.shouldSettleStartupGridBeforeConnect()) {
-      session.cancelScheduledConnectFrame()
-      if (session.connectFallbackTimer !== null) {
-        clearTimeout(session.connectFallbackTimer)
-        session.connectFallbackTimer = null
-      }
-      session.settleStartupGridBeforeConnect(() => {
-        session.startupGridSettledForConnect = true
-        session.runDeferredConnect()
-      })
+    // Why: spawn at the first real measurement, as the common pattern does; the fallback timer bounds the wait.
+    if (
+      session.connectFallbackTimer !== null &&
+      session.deps.isVisibleRef.current &&
+      !canMeasurePaneForFit(session.pane)
+    ) {
+      session.connectFrame = requestAnimationFrame(session.runDeferredConnect)
       return
     }
     session.connectStarted = true
@@ -197,6 +195,9 @@ export function installRunDeferredConnect(session: ConnectPanePtySession): void 
   }
 
   // Why: Wayland/CI compositors can starve rAF while timers/CDP stay responsive; the terminal must still start its PTY once.
-  session.connectFallbackTimer = setTimeout(session.runDeferredConnect, 250)
+  session.connectFallbackTimer = setTimeout(() => {
+    session.connectFallbackTimer = null
+    session.runDeferredConnect()
+  }, 250)
   session.connectFrame = requestAnimationFrame(session.runDeferredConnect)
 }
