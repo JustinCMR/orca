@@ -14,7 +14,9 @@ export async function keepLocalChatDropCopies<T extends { path: string }>(
     return [...entries]
   }
   try {
-    const kept = await window.api.fs.keepDroppedCopiesInLocalChatStore(entries.map(({ path }) => path))
+    const kept = await window.api.fs.keepDroppedCopiesInLocalChatStore(
+      entries.map(({ path }) => path)
+    )
     return entries.map((entry, index) =>
       typeof kept[index] === 'string' ? { ...entry, path: kept[index] } : entry
     )
