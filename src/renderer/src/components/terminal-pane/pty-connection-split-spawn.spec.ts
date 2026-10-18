@@ -215,7 +215,9 @@ export function registerPtyConnectionSplitSpawnTests(): void {
         const terminalOptions = Object.assign(pane.terminal.options, { fontSize: 12 })
         pane.container = createMeasuredElement({ rect: () => createRect(1200, 800) })
         const dimensions = () => {
-          if (!measurable) return { cols: 0, rows: 0 }
+          if (!measurable) {
+            return { cols: 0, rows: 0 }
+          }
           return narrow || terminalOptions.fontSize === 24
             ? { cols: 5, rows: 20 }
             : { cols: 120, rows: 40 }
@@ -235,7 +237,9 @@ export function registerPtyConnectionSplitSpawnTests(): void {
         }
         // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the pane, manager and deps doubles implement every member connectPanePty reads on this startup path.
         const args = [pane, createManager(1), deps] as unknown as Parameters<typeof connectPanePty>
-        if (scenario === 'metrics') applyOrDeferPaneMetricOptions(args[0], { fontSize: 24 }, false)
+        if (scenario === 'metrics') {
+          applyOrDeferPaneMetricOptions(args[0], { fontSize: 24 }, false)
+        }
         const binding = connectPanePty(...args)
 
         if (visibility === 'visible' && scenario !== 'starved') {
@@ -243,18 +247,24 @@ export function registerPtyConnectionSplitSpawnTests(): void {
           if (pendingCwd || ['metrics', 'disposed', 'narrow-command'].includes(scenario)) {
             expect(transport.connect).not.toHaveBeenCalled()
           }
-          if (scenario.startsWith('disposed')) binding.dispose()
+          if (scenario.startsWith('disposed')) {
+            binding.dispose()
+          }
           if (scenario === 'late-cwd') {
             vi.advanceTimersByTime(250)
             expect(transport.connect).not.toHaveBeenCalled()
           }
           pendingCwd?.resolve('/workspace')
           await flushAsyncTicks()
-          if (scenario === 'cwd') expect(transport.connect).not.toHaveBeenCalled()
+          if (scenario === 'cwd') {
+            expect(transport.connect).not.toHaveBeenCalled()
+          }
           measurable = true
           terminalOptions.fontSize = 12
           if (scenario === 'narrow-command') {
-            for (let retry = 0; retry < 11; retry += 1) frameCallbacks.shift()?.(0)
+            for (let retry = 0; retry < 11; retry += 1) {
+              frameCallbacks.shift()?.(0)
+            }
             expect(transport.connect).not.toHaveBeenCalled()
           }
           frameCallbacks.shift()?.(0)
@@ -265,7 +275,9 @@ export function registerPtyConnectionSplitSpawnTests(): void {
 
         vi.advanceTimersByTime(250)
         expect(transport.connect).toHaveBeenCalledTimes(scenario.startsWith('disposed') ? 0 : 1)
-        if (scenario.startsWith('disposed')) return
+        if (scenario.startsWith('disposed')) {
+          return
+        }
         expect(createdTransportOptions[0]?.command).toBe(startup?.command)
         expect(transport.connect).toHaveBeenCalledWith(
           expect.objectContaining(
