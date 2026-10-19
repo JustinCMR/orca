@@ -1,5 +1,6 @@
 import { AGENT_SESSION_CURRENT_REQUESTS_CLIENT_CAPABILITY } from './agent-session-current-requests-capability'
 import { AI_VAULT_CHAT_FORK_SOURCE_CAPABILITY } from './ai-vault-resume-preparation'
+import { PROGRAM_STATUS_RUNTIME_CAPABILITY } from './program-status/protocol'
 import { JIRA_AGENT_ACCESS_RUNTIME_CAPABILITY } from './jira-agent-capability'
 import { JIRA_STATUS_FILTER_RUNTIME_CAPABILITY } from './jira-quick-filters'
 import { JIRA_SAVED_FILTER_RUNTIME_CAPABILITY } from './jira-saved-filter-capability'
@@ -26,7 +27,8 @@ export {
   STRUCTURED_AGENT_SESSION_REGISTERED_AGENTS_RUNTIME_CAPABILITY,
   PI_STRUCTURED_DIALOGS_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RESUME_HISTORY_RUNTIME_CAPABILITY,
-  STRUCTURED_AGENT_SESSION_CLI_SOURCE_RUNTIME_CAPABILITY
+  STRUCTURED_AGENT_SESSION_CLI_SOURCE_RUNTIME_CAPABILITY,
+  STRUCTURED_AGENT_SESSION_AVAILABILITY_RUNTIME_CAPABILITY
 } from './structured-agent-session-surface-capabilities'
 import { AGENT_SESSION_ATTENTION_RUNTIME_CAPABILITIES } from './agent-session-attention-capabilities'
 export {
@@ -202,6 +204,7 @@ export const RUNTIME_CAPABILITIES = [
   BROWSER_NETWORK_TUNNEL_RUNTIME_CAPABILITY,
   BROWSER_NETWORK_EXECUTION_HOSTS_RUNTIME_CAPABILITY,
   'terminal.binary-stream.v1',
+  PROGRAM_STATUS_RUNTIME_CAPABILITY,
   'terminal.multiplex.v1',
   'workspace-ports.v1',
   'mobile.tasks.v1',
