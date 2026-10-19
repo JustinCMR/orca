@@ -46,16 +46,11 @@ export type NotificationDeliveryService = {
   ) => NotificationDispatchResult | Promise<NotificationDispatchResult>
 }
 
-const MAX_SHOWN_DESKTOP_KEYS = 50
-
 export function createNotificationDeliveryService(
   deps: NotificationDeliveryDependencies
 ): NotificationDeliveryService {
   const recentDesktopNotifications = new Map<string, number>()
   const recentMobileNotifications = new Map<string, number>()
-  // Why: a later turn end under the same notification id (a Stop re-entered after a blocking Stop
-  // hook) replaces the banner that id already shows, so the user is left with the final text.
-  const shownDesktopByKey = new Map<string, { notificationId: string; text: string }>()
 
   // Keyed news is announced once by its producer, so only its own repeat may collapse it.
   const dedupeKeyFor = (request: NotificationDispatchRequest): string =>
@@ -157,25 +152,14 @@ export function createNotificationDeliveryService(
       // Why: the Settings test button is an explicit, often-repeated user action, so it bypasses burst dedupe.
       if (request.source !== 'test') {
         // Dedupe by worktree, not source — agent-finish and terminal-bell often fire in one chunk; surface only the first.
-        const key = dedupeKeyFor(request)
-        const text = `${notificationOptions.title}\n${notificationOptions.body}`
-        const shown = shownDesktopByKey.get(key)
-        const replacesShown =
-          request.notificationId !== undefined &&
-          shown?.notificationId === request.notificationId &&
-          shown.text !== text
         if (
-          !replacesShown &&
-          !reserveNotificationCooldown(recentDesktopNotifications, key, deps.now())
+          !reserveNotificationCooldown(
+            recentDesktopNotifications,
+            dedupeKeyFor(request),
+            deps.now()
+          )
         ) {
           return { delivered: false, reason: 'cooldown' }
-        }
-        shownDesktopByKey.delete(key)
-        if (request.notificationId) {
-          shownDesktopByKey.set(key, { notificationId: request.notificationId, text })
-          if (shownDesktopByKey.size > MAX_SHOWN_DESKTOP_KEYS) {
-            shownDesktopByKey.delete(shownDesktopByKey.keys().next().value ?? key)
-          }
         }
       }
 

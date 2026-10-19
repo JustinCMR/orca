@@ -118,6 +118,9 @@ export function isTurnEndEvent(source: AgentHookSource, eventName: unknown): boo
       return eventName === 'AfterAgent'
     case 'amp':
       return eventName === 'agent.end'
+    case 'command-code':
+      // Why: its only done event; repeats within one prompt share the transcript key, so they restate.
+      return eventName === 'Stop'
     case 'cursor':
     case 'kiro':
       return eventName === 'stop'
@@ -135,7 +138,6 @@ export function isTurnEndEvent(source: AgentHookSource, eventName: unknown): boo
     case 'pi':
     case 'omp':
     case 'prime-agent':
-    case 'command-code':
       // Why: their done events are status snapshots or milestones that can repeat within one turn.
       return false
   }

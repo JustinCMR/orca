@@ -14,22 +14,27 @@ import { connectMockPanePty } from './pty-connection-test-connect-mock-pane'
 import { createInitialStoreState } from './pty-connection-test-store-fixtures'
 import type { StoreState } from './pty-connection-test-store-state'
 import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinator-types'
+import type { NotificationDispatchRequest } from '../../../../shared/notification-settings-types'
 import {
   installTerminalTestGlobals,
   restoreTerminalTestGlobals
 } from './pty-connection-test-environment'
+
+vi.mock('../../../../main/i18n/main-i18n', () => ({ translateMain: (key: string) => key }))
 
 const PANE_KEY = makePaneKey('tab-1', LEAF_1)
 const SEA = "The sea's waves carry the endless rhythm of tides."
 
 type TimelineEvent =
   | { at: number; title: string; bell?: true }
+  | { at: number; bell: true }
+  | { at: number; foreground: string | null }
   | { at: number; hook: 'working' | 'done'; message?: string; restated?: true }
 
 // Recorded from Claude Code 2.1.280 over a real PTY (ms from launch): one prompt, then a
 // `/btw` side question 45 s later. The side question spins the title and fires no hook.
-// The BEL beside each idle title is the burst agents commonly emit at a turn end; the one on the
-// side question's idle title stands in for Codex /compact's (QA F5b).
+// The BEL beside each idle title is the burst agents commonly emit at a turn end; the one 600 ms
+// after the side question's idle title stands in for Codex /compact's (QA F5b).
 const SIDE_QUESTION: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
   { at: 3_416, hook: 'working' },
@@ -41,24 +46,35 @@ const SIDE_QUESTION: TimelineEvent[] = [
   { at: 8_760, title: '✳ The sea', bell: true },
   { at: 53_328, title: '◑ The sea' },
   { at: 54_299, title: '◐ The sea' },
-  { at: 55_146, title: '✳ The sea', bell: true },
+  { at: 55_146, title: '✳ The sea' },
+  { at: 55_746, bell: true },
   // Added: a title spin as the agent quits, with no idle edge before it exits (QA Q2, Codex /quit).
-  { at: 60_000, title: '◐ The sea' }
+  { at: 60_000, title: '◐ The sea' },
+  // Added: goose (no hooks, no idle title) replaces Claude in the pane, works, and exits.
+  { at: 62_000, foreground: 'goose' },
+  { at: 80_000, title: '◐ Working' },
+  { at: 90_000, foreground: null }
 ]
 
-// A blocking Stop hook: Stop #1 lands, Claude continues text-only (title keeps spinning, no
-// hook), then Stop #2 re-enters with the final message just after Stop #1's banner (QA F4r) and
-// the title goes idle ~90 ms later. A minute on, a session reset clears the message cache and an
-// idle reminder restates the turn.
+// A Stop hook that blocks twice: Stop #1's banner goes out at 6.5 s, Claude continues text-only and
+// re-enters Stop with the same text, then again with the final text 3 s after that banner, both
+// inside main's 5 s cooldown. A minute on an idle reminder restates the turn. Then a second turn
+// whose re-entered Stop is overtaken by the user's next prompt before its cooldown passes.
 const BLOCKED_STOP: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
   { at: 1_000, hook: 'working' },
   { at: 1_200, title: '◐ Claude Code' },
   { at: 5_000, hook: 'done', message: 'Draft answer.' },
   { at: 6_000, title: '◑ Claude Code' },
-  { at: 6_800, hook: 'done', message: 'Final answer.' },
-  { at: 6_890, title: '✳ Claude Code' },
-  { at: 72_000, hook: 'done', restated: true }
+  { at: 8_000, hook: 'done', message: 'Draft answer.' },
+  { at: 9_500, hook: 'done', message: 'Final answer.' },
+  { at: 9_590, title: '✳ Claude Code' },
+  { at: 72_000, hook: 'done', restated: true },
+  { at: 80_000, hook: 'working' },
+  { at: 85_000, hook: 'done', message: 'Second turn.' },
+  { at: 87_000, hook: 'done', message: 'Second turn, revised.' },
+  { at: 88_000, hook: 'working' },
+  { at: 93_000, hook: 'done', message: 'Third turn.' }
 ]
 
 describe('Claude completion banners through the real pane and hook lanes', () => {
@@ -67,6 +83,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
   let transportOptions: Record<string, unknown>[] = []
   let storeSubscribers: ((state: StoreState) => void)[] = []
   let foreground: string | null = 'claude'
+  let banners: NotificationDispatchRequest[] = []
 
   beforeEach(async () => {
     vi.resetModules()
@@ -89,6 +106,39 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     vi.useFakeTimers()
     vi.mocked(window.api.pty.getForegroundProcess).mockImplementation(async () => foreground)
     vi.mocked(window.api.pty.hasChildProcesses).mockImplementation(async () => foreground !== null)
+    // Main's real delivery service, so its 5 s cooldown decides what the user sees.
+    const { createNotificationDeliveryService } =
+      await import('../../../../main/notifications/notification-delivery-service')
+    banners = []
+    const delivery = createNotificationDeliveryService({
+      readNotificationSettings: () => ({
+        enabled: true,
+        agentTaskComplete: true,
+        terminalBell: true,
+        suppressWhenFocused: false,
+        customSoundId: 'system',
+        customSoundPath: null,
+        customSoundVolume: 1,
+        mutedNotificationSourceIds: [],
+        notifyHiddenWorkspaces: true
+      }),
+      findActiveWindow: () => null,
+      isWindowVisible: () => false,
+      setTrayAttention: () => {},
+      isNotificationSupported: () => true,
+      dispatchMobileNotification: null,
+      readAuthorizationStatus: async () => 'authorized',
+      recordDeliveryOutcome: () => {},
+      deliverNative: (request) => {
+        banners.push(request)
+        return { delivered: true }
+      },
+      platform: 'linux',
+      now: () => Date.now()
+    })
+    vi.mocked(window.api.notifications.dispatch).mockImplementation(async (request) =>
+      delivery.dispatch(request)
+    )
   })
 
   afterEach(async () => {
@@ -118,6 +168,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
       if (!layout) {
         throw new Error('Expected the pane layout')
       }
+      transport.attach({ existingPtyId: ptyId })
       mockStoreState.ptyIdsByTabId = { 'tab-1': [ptyId] }
       mockStoreState.terminalLayoutsByTabId = {
         'tab-1': { ...layout, ptyIdsByLeafId: { [LEAF_1]: ptyId } }
@@ -143,6 +194,14 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     for (const event of timeline) {
       await vi.advanceTimersByTimeAsync(event.at - elapsed)
       elapsed = event.at
+      if ('foreground' in event) {
+        foreground = event.foreground
+        continue
+      }
+      if (!('title' in event) && 'bell' in event) {
+        transportHandler('onBell')()
+        continue
+      }
       if ('title' in event) {
         transportHandler('onTitleChange')(event.title, event.title)
         const nowWorking = !event.title.startsWith('✳')
@@ -178,45 +237,42 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     await vi.advanceTimersByTimeAsync(5_000)
   }
 
-  const banners = () =>
-    vi.mocked(window.api.notifications.dispatch).mock.calls.map(([request]) => request)
+  const rich = (message: string) =>
+    expect.objectContaining({ source: 'agent-task-complete', agentLastAssistantMessage: message })
 
-  it('announces the turn once with its last message; a /btw, its BEL and quitting stay quiet', async () => {
+  it('announces the turn once; a /btw, its late BEL and quitting stay quiet, a hookless successor does not', async () => {
     await play(SIDE_QUESTION)
+    // Claude is replaced in the pane by goose (no hooks), which later exits.
+    foreground = 'goose'
+    await vi.advanceTimersByTimeAsync(15_000)
     foreground = null
     await vi.advanceTimersByTimeAsync(15_000)
 
-    expect(banners()).toEqual([
-      expect.objectContaining({
-        source: 'agent-task-complete',
-        agentType: 'claude',
-        agentLastAssistantMessage: SEA
-      })
+    expect(banners).toEqual([
+      expect.objectContaining({ agentType: 'claude', agentLastAssistantMessage: SEA }),
+      expect.objectContaining({ source: 'agent-task-complete', terminalTitle: 'goose' })
     ])
-    expect(mockStoreState.markAgentAttentionUnread).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the title banner for a /btw on a pane whose paired server predates the stamp', async () => {
+  it("keeps main's banners for a /btw on a pane whose paired server predates the stamp", async () => {
     await play(SIDE_QUESTION, 'old-server')
 
-    expect(banners().at(-1)).toEqual(
+    // The hook banner wins the burst; the /btw gets main's generic title banner, which absorbs its BEL.
+    expect(banners).toEqual([
+      rich(SEA),
       expect.objectContaining({ source: 'agent-task-complete', terminalTitle: '✳ The sea' })
-    )
-    expect(banners().at(-1)).not.toHaveProperty('agentLastAssistantMessage')
+    ])
+    expect(banners[1]).not.toHaveProperty('agentLastAssistantMessage')
   })
 
-  it('announces each Stop of a blocking Stop hook turn once, and not its later restatement', async () => {
+  it("keeps the latest end of a blocking Stop hook turn past main's cooldown, once", async () => {
     await play(BLOCKED_STOP)
 
-    expect(banners()).toEqual([
-      expect.objectContaining({
-        source: 'agent-task-complete',
-        agentLastAssistantMessage: 'Draft answer.'
-      }),
-      expect.objectContaining({
-        source: 'agent-task-complete',
-        agentLastAssistantMessage: 'Final answer.'
-      })
+    expect(banners).toEqual([
+      rich('Draft answer.'),
+      rich('Final answer.'),
+      rich('Second turn.'),
+      rich('Third turn.')
     ])
   })
 })

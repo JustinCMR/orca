@@ -46,6 +46,13 @@ export type AgentCompletionCoordinatorOptions = {
   isLive: () => boolean
   /** True when this pane's turn ends belong to its hook lane, so a title idle edge announces nothing. */
   titleCompletionOwnedByHooks?: (title: string) => boolean
+  /** Same ownership for a title working edge (null: no title known), which then opens no turn. */
+  titleWorkingOwnedByHooks?: (
+    title: string | null,
+    foregroundAgent: RecognizedAgentProcess['agent'] | null
+  ) => boolean
+  /** Whether this pane gets hook-owned turn-end behavior for the agent (else main's exactly). */
+  usesHookTurnEnds?: (agentType: string | undefined) => boolean
   shouldPollProcessCadence?: () => boolean
   // Why: a host that publishes foreground evidence with its inventory lets a
   // pane without agent evidence stay push-driven instead of scheduling

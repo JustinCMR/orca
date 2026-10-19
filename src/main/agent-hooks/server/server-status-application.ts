@@ -4,7 +4,7 @@ import { getCohortAtEmit } from '../../telemetry/cohort-classifier'
 import { track } from '../../telemetry/client'
 import { isCommandCodeNewTurnWhileWorking } from '../../../shared/command-code-turn-boundary'
 import { isNewTurnEvent } from '../../../shared/agent-hook-listener/provider-event-routing'
-import { resolveTurnEndedAt } from '../../../shared/agent-hook-turn-end-timing'
+import { reduceHostTurnEnd } from '../../../shared/agent-hook-turn-end-timing'
 import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
 import type {
   AgentStatusObservation,
@@ -152,13 +152,19 @@ export abstract class AgentHookServerStatusApplication extends AgentHookServerSt
         : (observedAt ?? now)
     const turnStartedAt = resolveTurnStartedAt(previous, payload, observedAt ?? now)
     // Why: a relay's row was minted on the relay, which saw the event; main only restates it.
-    const turnEndedAt = resolveTurnEndedAt(
+    const { turnEndedAt, hostTurn } = reduceHostTurnEnd(
       previous,
       payload,
       observedAt ?? now,
       payload.connectionId === null
     )
-    const { stopHookActive: _stopHookActive, turnEndedAt: _turnEndedAt, ...event } = payload
+    const {
+      stopHookActive: _stopHookActive,
+      nativeTurnKey: _nativeTurnKey,
+      turnEndedAt: _turnEndedAt,
+      hostTurn: _hostTurn,
+      ...event
+    } = payload
     // Why: `stateStartedAt` tracks the current state, while `receivedAt` tracks every arrival.
     return {
       ...event,
@@ -167,7 +173,8 @@ export abstract class AgentHookServerStatusApplication extends AgentHookServerSt
       stateStartedAt,
       // Always written here, so a producer can never declare it.
       turnStartedAt,
-      ...(turnEndedAt !== undefined ? { turnEndedAt } : {})
+      ...(turnEndedAt !== undefined ? { turnEndedAt } : {}),
+      ...(hostTurn ? { hostTurn } : {})
     }
   }
 

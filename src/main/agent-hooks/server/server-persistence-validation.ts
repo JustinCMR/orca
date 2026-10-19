@@ -8,6 +8,9 @@ import {
   type ParsedAgentStatusPayload
 } from '../../../shared/agent-status-types'
 import { isAgentHookSource } from '../../../shared/agent-hook-relay'
+import type { HostTurnRecord } from '../../../shared/agent-hook-listener/listener-event'
+import { isTurnEndedAt } from '../../../shared/agent-hook-turn-end-timing'
+import { isRecord } from '../../../shared/agent-status-child-work-value-guards'
 import {
   normalizeClaudePromptId,
   normalizeGrokPromptId
@@ -152,6 +155,7 @@ export function sanitizeHydratedEntry(
       : undefined
   const turnStartedAt = record.turnStartedAt
   const turnEndedAt = record.turnEndedAt
+  const hostTurn = readHostTurnRecord(record.hostTurn)
   return {
     paneKey,
     agentPresence: readAgentProcessPresence(record.agentPresence),
@@ -178,10 +182,31 @@ export function sanitizeHydratedEntry(
     ...(typeof turnStartedAt === 'number' && Number.isFinite(turnStartedAt) && turnStartedAt > 0
       ? { turnStartedAt }
       : {}),
-    ...(typeof turnEndedAt === 'number' && Number.isFinite(turnEndedAt) && turnEndedAt > 0
-      ? { turnEndedAt }
-      : {})
+    ...(isTurnEndedAt(turnEndedAt) ? { turnEndedAt } : {}),
+    ...(hostTurn ? { hostTurn } : {})
   }
+}
+
+function readHostTurnRecord(value: unknown): HostTurnRecord | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+  const { owner, currentTurnKey, completed } = value
+  if (typeof owner !== 'string' || typeof currentTurnKey !== 'string') {
+    return undefined
+  }
+  if (completed === undefined) {
+    return { owner, currentTurnKey }
+  }
+  return isRecord(completed) &&
+    typeof completed.turnKey === 'string' &&
+    isTurnEndedAt(completed.endedAt)
+    ? {
+        owner,
+        currentTurnKey,
+        completed: { turnKey: completed.turnKey, endedAt: completed.endedAt }
+      }
+    : undefined
 }
 
 export function readPersistedLaunchTokenHash(rawEntry: unknown): string | null {

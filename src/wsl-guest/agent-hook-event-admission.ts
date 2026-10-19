@@ -6,7 +6,7 @@ import type { HookListenerState } from '../shared/agent-hook-listener/listener-s
 import type { AgentHookEventPayload } from '../shared/agent-hook-listener/listener-event'
 import type { AgentHookSource } from '../shared/agent-hook-relay'
 import { retainClaudeSettledRequests } from '../shared/agent-hook-listener/claude-settled-permission-requests'
-import { resolveTurnEndedAt } from '../shared/agent-hook-turn-end-timing'
+import { reduceHostTurnEnd } from '../shared/agent-hook-turn-end-timing'
 import { buildRelayHookEnvelope } from './agent-hook-envelope-build'
 import type { RelayHookForward } from './agent-hook-server-contract'
 import { MAX_CACHED_PANES, type CachedPaneEnvelopeMeta } from './agent-hook-cached-pane-status'
@@ -62,10 +62,16 @@ export function applyRelayHookEvent(
     source
   )
   // Why: the relay is this pane's execution host, the only side that sees the event name.
-  const { stopHookActive: _stopHookActive, ...unflagged } = revised
+  const {
+    stopHookActive: _stopHookActive,
+    nativeTurnKey: _nativeTurnKey,
+    turnEndedAt: _turnEndedAt,
+    hostTurn: _hostTurn,
+    ...unflagged
+  } = revised
   const event: AgentHookEventPayload = {
     ...unflagged,
-    turnEndedAt: resolveTurnEndedAt(previous, revised, Date.now(), options.isReplay !== true)
+    ...reduceHostTurnEnd(previous, revised, Date.now(), options.isReplay !== true)
   }
   // Why: this post came from a process still running inside a pane whose tab the user closed.
   // Caching or forwarding it makes every connected client advertise a live, resumable agent pane

@@ -8,7 +8,11 @@ import { isFreshNonDoneAgentStatus } from '../../../../../shared/agent-status-ty
 import { isCtrlCKeyEvent, isPlainEscapeKeyEvent } from '../agent-interrupt-inference'
 import { createAgentCompletionCoordinator } from '../agent-completion-coordinator'
 import { dispatchAgentHookTerminalLifecycle } from '../agent-hook-terminal-lifecycle'
-import { hookLaneOwnsPaneTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
+import {
+  hookLaneOwnsAgentTurnEnds,
+  hookLaneOwnsTitleTurnEnds
+} from '@/hooks/agent-hook-turn-end-ownership'
+import { resolveCommittedTitleAgentType } from '@/lib/pane-agent-evidence'
 import { absorbBurstBellForHookOwnedIdle } from './agent-task-complete-notify'
 import { resolveCompatibleAgentTypeForOwner } from '../../../../../shared/agent-title-owner'
 import { registerTerminalSideEffectFactConsumer } from '../terminal-side-effect-facts-handler'
@@ -179,13 +183,24 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
     dispatchHookLifecycle: (payload) =>
       dispatchAgentHookTerminalLifecycle(session.cacheKey, payload),
     titleCompletionOwnedByHooks: (title) => {
-      if (!hookLaneOwnsPaneTurnEnds(session.cacheKey, title)) {
+      if (!hookLaneOwnsTitleTurnEnds(session.cacheKey, session.transport.getPtyId(), title)) {
         return false
       }
       absorbBurstBellForHookOwnedIdle(session)
       return true
     },
-    shouldSuppressProcessReplacementCompletion: (_exited, replacement) => {
+    // Why: a title naming no agent belongs to the foreground process (goose after Claude opens a turn).
+    titleWorkingOwnedByHooks: (title, foregroundAgent) =>
+      hookLaneOwnsAgentTurnEnds(
+        session.cacheKey,
+        session.transport.getPtyId(),
+        (title ? resolveCommittedTitleAgentType(title) : null) ?? foregroundAgent
+      ),
+    shouldSuppressProcessReplacementCompletion: (exited, replacement) => {
+      // Why: the hook lane owns this pane's turn ends and its last turn ended, so quitting ends none.
+      if (hookLaneOwnsAgentTurnEnds(session.cacheKey, session.transport.getPtyId(), exited.agent)) {
+        return true
+      }
       const currentStatus = useAppStore.getState().agentStatusByPaneKey[session.cacheKey]
       const currentAgentForReplacement = resolveCompatibleAgentTypeForOwner(
         currentStatus?.agentType,
@@ -196,8 +211,7 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
       )
     },
     shouldSuppressConfirmedProcessExitCompletion: (exited) => {
-      // Why: the hook lane owns this pane's turn ends and its last turn ended, so quitting ends none.
-      if (hookLaneOwnsPaneTurnEnds(session.cacheKey, exited.processName)) {
+      if (hookLaneOwnsAgentTurnEnds(session.cacheKey, session.transport.getPtyId(), exited.agent)) {
         return true
       }
       const currentStatus = useAppStore.getState().agentStatusByPaneKey[session.cacheKey]

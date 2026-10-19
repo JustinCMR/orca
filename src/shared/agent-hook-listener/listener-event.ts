@@ -4,6 +4,17 @@ import type { AgentHookSource } from '../agent-hook-relay'
 import type { AgentProviderSessionMetadata } from '../agent-session-resume'
 import type { ClaudeSettledRequest } from './claude-settled-permission-requests'
 
+/**
+ * The execution host's private record of which turn a pane's agent session is in and which turn
+ * last ended. Saved with the status row; never published (the public fact is `turnEndedAt`).
+ */
+export type HostTurnRecord = {
+  /** The provider session the turn keys belong to; another session starts a new record. */
+  owner: string
+  currentTurnKey: string
+  completed?: { turnKey: string; endedAt: number }
+}
+
 export type AgentHookEventPayload = {
   paneKey: string
   agentPresence?: AgentProcessPresence
@@ -51,9 +62,15 @@ export type AgentHookEventPayload = {
   /** When the main agent's latest turn ended, minted only by the execution host's turn-end
    *  derivation (agent-hook-turn-end-timing.ts); a relay forwards it and a result retry restates it. */
   turnEndedAt?: number
-  /** The agent's turn-end event re-entered after a blocking Stop hook (`stop_hook_active`).
-   *  In-process only: the host reads it while minting `turnEndedAt`; never stored or sent. */
+  /** The agent's turn-end event re-entered after a blocking Stop hook (`stop_hook_active`), read
+   *  only for agents whose signal is verified. In-process only; never stored or sent. */
   stopHookActive?: true
+  /** The agent's own turn id (Codex `turn_id`, Command Code's transcript prompt key). In-process
+   *  only: the host folds it into `hostTurn`; never stored or sent. */
+  nativeTurnKey?: string
+  /** The execution host's private turn record (agent-hook-turn-end-timing.ts). Saved with the row,
+   *  never published: snapshots, IPC payloads and relay envelopes are built from allow-lists. */
+  hostTurn?: HostTurnRecord
   /** Claude live work the child list does not show (a shell, a cron, an owed task notification); rejects false input-based interrupts. */
   claudeRunningNonAgentTask?: boolean
   /** Row projected from a structured session the host holds: `owned` while its provider child

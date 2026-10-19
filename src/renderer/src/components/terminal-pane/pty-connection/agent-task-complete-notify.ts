@@ -21,17 +21,19 @@ import type { ConnectPanePtySession } from './connect-pane-pty-session'
 import { installAgentIdleWorkingHandlers } from './agent-idle-working-handlers'
 
 /** A hook-owned idle edge still ends its output burst, so like a claimed title completion it
- *  absorbs that burst's BEL (one held now, or one that lands within the grace window). */
+ *  absorbs that burst's BEL: one held now, or one that lands within the completion's max wait. */
 export function absorbBurstBellForHookOwnedIdle(session: ConnectPanePtySession): void {
-  session.pendingTerminalBellNotification = false
-  session.clearTerminalBellNotificationTimer()
-  if (session.agentTaskCompleteNotificationGraceTimer !== null) {
+  if (session.hasPendingAgentTaskCompleteNotification()) {
     return
   }
-  session.agentTaskCompleteNotificationGraceTimer = setTimeout(() => {
-    session.agentTaskCompleteNotificationGraceTimer = null
-    session.pendingTerminalBellNotification = false
-  }, AGENT_TASK_COMPLETE_NOTIFICATION_GRACE_MS)
+  session.pendingTerminalBellNotification = false
+  session.clearTerminalBellNotificationTimer()
+  session.hookOwnedIdleAbsorbsBell = true
+  // Why: main's claimed completion stayed pending on a `done` row for its whole max wait.
+  session.agentTaskCompleteNotificationMaxTimer = setTimeout(() => {
+    session.agentTaskCompleteNotificationMaxTimer = null
+    session.hookOwnedIdleAbsorbsBell = false
+  }, AGENT_TASK_COMPLETE_NOTIFICATION_MAX_WAIT_MS)
 }
 
 export function installAgentTaskCompleteNotify(session: ConnectPanePtySession): void {

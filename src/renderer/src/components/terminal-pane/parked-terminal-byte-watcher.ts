@@ -29,7 +29,7 @@ import {
 } from './terminal-side-effect-facts-handler'
 import { dispatchTerminalNotification } from './use-notification-dispatch'
 import { hasPendingHookLaneCompletion } from '@/hooks/agent-hook-completion-notifications'
-import { hookLaneOwnsPaneTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
+import { hookLaneOwnsTitleTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
 import { acquireHiddenRendererPtyDeliveryClaim } from './pty-renderer-delivery-claims'
 import { isRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 
@@ -122,7 +122,7 @@ export function startParkedTerminalByteWatcher(
       pendingBellNotification = false
       // Why: the hook lane's pending Done announces this burst's turn end, superseding the BEL as a pane completion does.
       if (
-        hasPendingHookLaneCompletion(paneKey) &&
+        hasPendingHookLaneCompletion(paneKey, ptyId) &&
         isAgentTaskCompleteOsNotificationEnabled(useAppStore.getState())
       ) {
         return
@@ -180,7 +180,7 @@ export function startParkedTerminalByteWatcher(
         // Why: completion supersedes a concurrent BEL so each burst yields exactly one OS notification (live-path parity).
         pendingBellNotification = false
         clearBellNotificationTimer()
-        if (hookLaneOwnsPaneTurnEnds(paneKey, title)) {
+        if (hookLaneOwnsTitleTurnEnds(paneKey, ptyId, title)) {
           return
         }
         dispatchTerminalNotification(worktreeId, {

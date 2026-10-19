@@ -223,7 +223,7 @@ export function createAgentCompletionCoordinator(
     recordPaneActivity()
   }
 
-  function recordTitleWorking(): boolean {
+  function recordTitleWorking(title: string | null): boolean {
     // Why: hooks can report `done` before title tracking notices the next milestone, so the working title must cancel that provisional done.
     clearPendingHookDone()
     if (
@@ -231,6 +231,11 @@ export function createAgentCompletionCoordinator(
       Date.now() - completionState.lastCompletionAt < COMPLETION_REPLAY_GUARD_MS
     ) {
       return false
+    }
+    // Why: a spin on a settled hook-owned pane (/btw, a quit) opens no turn, so it keeps the hook's receipt.
+    const foreground = processState.lastForegroundAgent?.agent ?? null
+    if (options.titleWorkingOwnedByHooks?.(title, foreground) === true) {
+      return true
     }
     completionState.workingStatusObserved = true
     completionState.requiresFreshWorking = false
@@ -243,7 +248,7 @@ export function createAgentCompletionCoordinator(
   }
 
   function observeTitleWorking(): void {
-    recordTitleWorking()
+    recordTitleWorking(null)
   }
 
   function claimTitleCompletion(title: string): boolean {

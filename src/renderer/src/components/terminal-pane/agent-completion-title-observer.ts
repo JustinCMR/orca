@@ -9,7 +9,7 @@ type TitleObserverOptions = {
   hasAgentEvidence: () => boolean
   establishAgentEvidence: () => void
   recordPaneActivity: () => void
-  recordTitleWorking: () => boolean
+  recordTitleWorking: (title: string) => boolean
   holdTitleCompletionPending: (title: string) => void
   hasPendingTitle: () => boolean
   dropPendingTitle: () => void
@@ -80,7 +80,7 @@ export function createAgentCompletionTitleObserver({
 
     if (status === 'working') {
       // Why: a rejected working title is a post-hook-completion replay; leave lastStatus untouched so it can't open a completion branch.
-      if (!recordTitleWorking()) {
+      if (!recordTitleWorking(title)) {
         return
       }
     } else if (getLastStatus() === 'working') {

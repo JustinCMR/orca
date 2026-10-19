@@ -72,8 +72,8 @@ export function createAgentCompletionNotificationController({
 
   function hookCompletionIdentity(payload: AgentCompletionStatusSnapshot): string | null {
     // Why: `stateStartedAt` is pinned while the reported state does not change. A Claude pane held at `working` by background inventory would otherwise give every turn in the run the same identity.
-    // Why: `stateStartedAt` is also pinned across done→done, so a Stop re-entered after a blocking
-    // Stop hook is told from a restatement only by the host's turn-end stamp.
+    // Why: `stateStartedAt` is also pinned across done→done, so a later turn end in one done
+    // segment is told from a restatement only by the host's turn-end stamp.
     const timestamp = isFiniteTurnCompletedAt(payload.turnCompletedAt)
       ? payload.turnCompletedAt
       : payload.state === 'done' && isFiniteTurnCompletedAt(payload.turnEndedAt)
@@ -208,7 +208,11 @@ export function createAgentCompletionNotificationController({
         ...(optionsOverride.terminalIdleConfirmed === true ? { terminalIdleConfirmed: true } : {}),
         ...(optionsOverride.agentStatus ? { agentStatus: optionsOverride.agentStatus } : {})
       })
-    } else if (optionsOverride.agentStatus) {
+    } else if (
+      optionsOverride.agentStatus &&
+      (optionsOverride.notifyWithoutLifecycle === true ||
+        options.usesHookTurnEnds?.(optionsOverride.agentStatus.agentType) === true)
+    ) {
       // Why: carry the hook's own snapshot; the stored row may be a newer state (a pinned `working`) or too old to lend content.
       options.dispatchCompletion(title, {
         source,
