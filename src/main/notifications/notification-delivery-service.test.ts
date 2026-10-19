@@ -184,6 +184,28 @@ describe('createNotificationDeliveryService', () => {
     })
   })
 
+  it('replaces a shown banner with the same id when its text changed, inside the window', () => {
+    const harness = makeHarness(makeSettings())
+    const service = createNotificationDeliveryService(harness.deps)
+    const done = (message: string) =>
+      makeRequest({
+        notificationId: 'turn-1',
+        agentType: 'claude',
+        agentState: 'done',
+        agentLastAssistantMessage: message
+      })
+    expect(service.dispatch(done('Draft answer.'))).toEqual({ delivered: true })
+    expect(service.dispatch(done('Draft answer.'))).toEqual({
+      delivered: false,
+      reason: 'cooldown'
+    })
+    expect(service.dispatch(done('Final answer.'))).toEqual({ delivered: true })
+    expect(service.dispatch(makeRequest({ source: 'terminal-bell' }))).toEqual({
+      delivered: false,
+      reason: 'cooldown'
+    })
+  })
+
   it('lets keyed news through the workspace window, collapsing only its own repeat', () => {
     const harness = makeHarness(makeSettings())
     const service = createNotificationDeliveryService(harness.deps)

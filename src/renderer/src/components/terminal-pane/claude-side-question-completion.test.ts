@@ -28,7 +28,8 @@ type TimelineEvent =
 
 // Recorded from Claude Code 2.1.280 over a real PTY (ms from launch): one prompt, then a
 // `/btw` side question 45 s later. The side question spins the title and fires no hook.
-// The BEL beside the idle title is the burst agents commonly emit at a turn end.
+// The BEL beside each idle title is the burst agents commonly emit at a turn end; the one on the
+// side question's idle title stands in for Codex /compact's (QA F5b).
 const SIDE_QUESTION: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
   { at: 3_416, hook: 'working' },
@@ -40,20 +41,23 @@ const SIDE_QUESTION: TimelineEvent[] = [
   { at: 8_760, title: '✳ The sea', bell: true },
   { at: 53_328, title: '◑ The sea' },
   { at: 54_299, title: '◐ The sea' },
-  { at: 55_146, title: '✳ The sea' }
+  { at: 55_146, title: '✳ The sea', bell: true },
+  // Added: a title spin as the agent quits, with no idle edge before it exits (QA Q2, Codex /quit).
+  { at: 60_000, title: '◐ The sea' }
 ]
 
 // A blocking Stop hook: Stop #1 lands, Claude continues text-only (title keeps spinning, no
-// hook), then Stop #2 re-enters with the final message and the title goes idle ~90 ms later.
-// A minute on, a session reset clears the message cache and an idle reminder restates the turn.
+// hook), then Stop #2 re-enters with the final message just after Stop #1's banner (QA F4r) and
+// the title goes idle ~90 ms later. A minute on, a session reset clears the message cache and an
+// idle reminder restates the turn.
 const BLOCKED_STOP: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
   { at: 1_000, hook: 'working' },
   { at: 1_200, title: '◐ Claude Code' },
   { at: 5_000, hook: 'done', message: 'Draft answer.' },
   { at: 6_000, title: '◑ Claude Code' },
-  { at: 12_000, hook: 'done', message: 'Final answer.' },
-  { at: 12_090, title: '✳ Claude Code' },
+  { at: 6_800, hook: 'done', message: 'Final answer.' },
+  { at: 6_890, title: '✳ Claude Code' },
   { at: 72_000, hook: 'done', restated: true }
 ]
 
