@@ -71,19 +71,35 @@ async function mergeFolder(from: string, to: string): Promise<void> {
   }
 }
 
-/** Best effort: failed work stays under the legacy root for the next install to retry. */
+/** Best effort: failed work stays at its source for the next install to retry. */
 export async function migrateLegacyNativeChatVisualsFolders(
   stateDirectory: string,
   logger: StructuredAgentSessionLogger
 ): Promise<void> {
-  const legacyRoot = join(stateDirectory, LEGACY_ROOT_NAME)
   const root = nativeChatScratchRootFor(stateDirectory)
+  for (const [sourceRoot, suffix] of [
+    [join(stateDirectory, LEGACY_ROOT_NAME), ''],
+    [root, '.expired']
+  ] as const) {
+    await migrateFolders(sourceRoot, root, suffix, logger)
+  }
+}
+
+async function migrateFolders(
+  legacyRoot: string,
+  root: string,
+  suffix: string,
+  logger: StructuredAgentSessionLogger
+): Promise<void> {
   try {
     if ((await presenceOf(legacyRoot)) !== 'directory') {
       return
     }
     const folders = (await readdir(legacyRoot, { withFileTypes: true })).filter(
-      (entry) => entry.isDirectory() && isNativeChatScratchFolderName(entry.name)
+      (entry) =>
+        entry.isDirectory() &&
+        entry.name.endsWith(suffix) &&
+        isNativeChatScratchFolderName(suffix ? entry.name.slice(0, -suffix.length) : entry.name)
     )
     if (folders.length > 0) {
       if ((await presenceOf(root)) === 'other') {
@@ -97,7 +113,7 @@ export async function migrateLegacyNativeChatVisualsFolders(
     }
     for (const folder of folders) {
       const from = join(legacyRoot, folder.name)
-      const to = join(root, folder.name)
+      const to = join(root, suffix ? folder.name.slice(0, -suffix.length) : folder.name)
       try {
         const destination = await presenceOf(to)
         if (destination === 'absent') {
@@ -113,7 +129,9 @@ export async function migrateLegacyNativeChatVisualsFolders(
         })
       }
     }
-    await removeIfEmpty(legacyRoot)
+    if (legacyRoot !== root) {
+      await removeIfEmpty(legacyRoot)
+    }
   } catch (error) {
     logger.warn('pre-rename chat visuals folders could not be moved', { scope: SCOPE, error })
   }

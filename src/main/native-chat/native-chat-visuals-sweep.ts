@@ -5,7 +5,7 @@
 // as unused goes back to its chat. A failure is logged and never blocks anything else.
 
 import type { Dirent } from 'node:fs'
-import { lstat, readdir, rename, rm } from 'node:fs/promises'
+import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isDefinitiveAbsence } from '../../shared/definitive-filesystem-absence'
 import { yieldToEventLoop } from '../../shared/event-loop-yield'
@@ -78,16 +78,13 @@ export async function sweepNativeChatVisualsFolders(
     }
     try {
       if (heldFolders.has(folderName)) {
-        if (expired) {
-          await restoreSetAsideFolder(root, folderName)
-        }
         continue
       }
       await remove(join(root, entry.name))
       result.removed += 1
     } catch (error) {
       result.failed += 1
-      deps.logger.warn('native-chat scratch folder could not be removed or restored', {
+      deps.logger.warn('native-chat scratch folder could not be removed', {
         scope: 'nativeChatVisuals.sweep',
         reason: expired ? 'set-aside' : 'no-record',
         error
@@ -95,21 +92,6 @@ export async function sweepNativeChatVisualsFolders(
     }
   }
   return result
-}
-
-/** Moves a held chat's set-aside folder back unless the chat has made a new one since; that
- *  case keeps both, as nothing here can tell which files the chat still names. */
-async function restoreSetAsideFolder(root: string, folderName: string): Promise<void> {
-  const folder = join(root, folderName)
-  try {
-    await lstat(folder)
-    return
-  } catch (error) {
-    if (!isDefinitiveAbsence(error)) {
-      throw error
-    }
-  }
-  await rename(folder + EXPIRED_SUFFIX, folder)
 }
 
 // Why minutes, not at boot: the first sweep must not compete with session restore; after that, a

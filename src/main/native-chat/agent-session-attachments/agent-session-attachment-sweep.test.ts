@@ -1,10 +1,36 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as FsPromises from 'node:fs/promises'
+import type * as Fs from 'node:fs'
+const fault = vi.hoisted(() => ({ path: '', sync: false }))
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof FsPromises>()
+  return {
+    ...fs,
+    readdir: (...args: Parameters<typeof fs.readdir>) => {
+      if (!fault.sync && String(args[0]) === fault.path) {
+        throw Object.assign(new Error('listing failed'), { code: 'EIO' })
+      }
+      return fs.readdir(...args)
+    }
+  }
+})
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof Fs>()
+  return {
+    ...fs,
+    lstatSync: (...args: Parameters<typeof fs.lstatSync>) => {
+      if (fault.sync && String(args[0]).startsWith(fault.path)) {
+        throw Object.assign(new Error('probe failed'), { code: 'EACCES' })
+      }
+      return fs.lstatSync(...args)
+    }
+  }
+})
 import type Database from '../../sqlite/sync-database'
 import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
-import { AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS } from '../../../shared/agent-session-host-authority'
 import {
   closeTestJournalHostDatabases,
   openTestJournalHostDatabase
@@ -47,6 +73,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  fault.path = ''
+  fault.sync = false
   store.clearInFlightForTests()
   closeTestJournalHostDatabases()
   await rm(stateDirectory, { recursive: true, force: true })
@@ -117,22 +145,30 @@ describe('sweepAgentSessionAttachments', () => {
     claim('session-1', await seedUpload(SENT, OLD))
     await seedUpload(UNSENT, OLD)
     await seedUpload(CARRIED, HOUR)
-    const { removed } = await sweepAgentSessionAttachments(store, facts(), NOW)
+    const onUploadRemoved = vi.fn()
+    const { removed } = await sweepAgentSessionAttachments(store, facts({ onUploadRemoved }), NOW)
     expect(removed).toEqual([join(store.rootDir, UNSENT)])
+    expect(onUploadRemoved.mock.calls).toEqual([[join(store.rootDir, UNSENT)]])
     expect(await remaining()).toEqual([SENT, CARRIED].sort())
   })
 
-  it('keeps a paste this host stored in place once a send claims it, past the unsent window', async () => {
-    const sent = await store.storeFile('orca-paste-1-a.png', Buffer.from('png'))
-    const unsent = await store.storeFile('orca-paste-2-b.png', Buffer.from('png'))
-    claim('session-1', sent)
-    const later = NOW + UNCLAIMED_ATTACHMENT_MAX_AGE_MS + HOUR
-    const { removed } = await sweepAgentSessionAttachments(store, facts(), later)
-    expect(removed).toEqual([dirname(unsent)])
-    expect(await readFile(sent, 'utf8')).toBe('png')
-    // A queued send is retried with a new id after the host's id window; its image must remain.
-    expect(UNCLAIMED_ATTACHMENT_MAX_AGE_MS).toBeGreaterThan(AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS)
-  })
+  it.each(['contents', 'root', 'prune'] as const)(
+    'keeps bytes and claims across an uncertain %s read and a healthy retry',
+    async (boundary) => {
+      const path = await store.storeFile('sent.png', Buffer.from('bytes'))
+      const old = new Date(NOW - OLD)
+      await utimes(dirname(path), old, old)
+      claim('session-1', path)
+      fault.path = boundary === 'contents' ? dirname(path) : store.rootDir
+      fault.sync = boundary === 'prune'
+      await expect(sweepAgentSessionAttachments(store, facts(), NOW)).rejects.toThrow()
+      fault.path = ''
+      fault.sync = false
+      await sweepAgentSessionAttachments(store, facts(), NOW)
+      expect(await readFile(path, 'utf8')).toBe('bytes')
+      expect(claimedSessions()).toEqual(['session-1'])
+    }
+  )
 
   it('keeps an upload any chat still claims: a /clear carry is a second holder', async () => {
     const path = await seedUpload(CARRIED, OLD)
@@ -169,7 +205,9 @@ describe('sweepAgentSessionAttachments', () => {
     await seedUpload(UNSENT, HOUR)
     // Marked, then the process died before the files went.
     expect(markUnclaimedUploadForSweep(db, UNSENT, NOW)).toBe(true)
-    await sweepAgentSessionAttachments(store, facts(), NOW)
+    const onUploadRemoved = vi.fn()
+    await sweepAgentSessionAttachments(store, facts({ onUploadRemoved }), NOW)
+    expect(onUploadRemoved).toHaveBeenCalledWith(join(store.rootDir, UNSENT))
     expect(await remaining()).toEqual([])
     expect(db.prepare('SELECT COUNT(*) AS n FROM agent_session_attachment_sweeps').get()).toEqual({
       n: 0

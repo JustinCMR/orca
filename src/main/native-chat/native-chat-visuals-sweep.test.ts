@@ -84,7 +84,7 @@ describe('the visuals folder sweep', () => {
     expect(existsSync(orphan)).toBe(false)
   })
 
-  it('keeps a held chat folder however long it went unused, and gives back one set aside', async () => {
+  it('keeps a held chat folder however long it went unused, and retains one set aside for startup recovery', async () => {
     const state = stateDirectory()
     const idle = visualsFor(state, 'chat-idle')
     const setAside = visualsFor(state, 'chat-set-aside')
@@ -97,7 +97,7 @@ describe('the visuals folder sweep', () => {
 
     expect(result).toEqual({ removed: 1, failed: 0 })
     expect(readFileSync(join(idle, 'chart.html'), 'utf8')).toBe('<p>chart</p>')
-    expect(readFileSync(join(setAside, 'chart.html'), 'utf8')).toBe('<p>chart</p>')
+    expect(readFileSync(join(`${setAside}.expired`, 'chart.html'), 'utf8')).toBe('<p>chart</p>')
     expect(existsSync(`${orphan}.expired`)).toBe(false)
   })
 
@@ -145,7 +145,7 @@ describe('the visuals folder sweep', () => {
     })
     expect(result).toEqual({ removed: 1, failed: 1 })
     expect(sweep.logger.warn).toHaveBeenCalledWith(
-      'native-chat scratch folder could not be removed or restored',
+      'native-chat scratch folder could not be removed',
       expect.objectContaining({ scope: 'nativeChatVisuals.sweep', reason: 'no-record' })
     )
   })

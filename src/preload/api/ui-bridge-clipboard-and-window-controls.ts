@@ -113,6 +113,12 @@ export const uiClipboardAndWindowControlsApi = {
     paths: string[]
   ): Promise<{ path: string; kept: boolean; exists: boolean }[]> =>
     ipcRenderer.invoke('clipboard:restoreNativeChatPastes', paths),
+  onAgentSessionUploadRemoved: (callback: (uploadDir: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, uploadDir: string): void =>
+      callback(uploadDir)
+    ipcRenderer.on('app:agentSessionUploadRemoved', listener)
+    return () => ipcRenderer.removeListener('app:agentSessionUploadRemoved', listener)
+  },
   readClipboardImageThumbnail: (): Promise<ClipboardImageThumbnail | null> =>
     ipcRenderer.invoke('clipboard:readImageThumbnail'),
   writeClipboardText: (text: string): Promise<void> =>

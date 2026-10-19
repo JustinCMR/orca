@@ -1,5 +1,4 @@
-// Resolves a tab to its Agent Session History row, so the tab menu offers the same "Resume in New
-// Native Chat" / "Resume in New CLI" move the row menu does, under the row menu's gating.
+// Resolves a tab to its Agent Session History row so both menus offer the same surface switches.
 
 import type { AppState } from '@/store/types'
 import { getIndexedAllWorktrees } from '@/store/worktree-repo-index'
@@ -78,8 +77,7 @@ function canHostOfferTabSessionMove(
   return kind === 'chat' && parseExecutionHostId(hostScope)?.kind === 'runtime'
 }
 
-/** Whether a pane's running agent has a conversation the move could act on, without building the
- *  list request, for a surface that stays rendered. The history lookup still decides on click. */
+/** The pane's known identity and launch route, without a History request. */
 export function canPaneOfferResumeInNewChat(
   state: AppState,
   pane: { worktreeId: string; paneKey: string }

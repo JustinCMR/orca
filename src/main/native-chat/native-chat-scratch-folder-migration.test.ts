@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -93,11 +94,18 @@ describe('moving pre-rename chat visuals folders', () => {
     const state = stateDirectory()
     legacyFor(state, 'chat-old', { 'chart.html': '<p>old chart</p>' })
     writeFileSync(join(legacyRootOf(state), 'notes.txt'), 'not ours')
+    const canonical = currentFor(state, 'chat-resume', { 'chart.html': '<p>saved</p>' })
+    renameSync(canonical, `${canonical}.expired`)
+    mkdirSync(canonical)
 
     await migrateLegacyNativeChatVisualsFolders(state, logger())
 
     const moved = nativeChatScratchFolderFor(state, 'chat-old')
     expect(readFileSync(join(moved, 'chart.html'), 'utf8')).toBe('<p>old chart</p>')
+    expect(await readNativeChatVisualFile(canonical, 'chart.html')).toMatchObject({
+      ok: true,
+      html: '<p>saved</p>'
+    })
     // Only what this host minted moves; the old root stays while anything else is in it.
     expect(readdirSync(legacyRootOf(state))).toEqual(['notes.txt'])
     rmSync(join(legacyRootOf(state), 'notes.txt'))
@@ -160,11 +168,13 @@ describe('moving pre-rename chat visuals folders', () => {
     'keeps failed work retryable after a %s failure',
     async (operation) => {
       const state = stateDirectory()
-      const legacy = legacyFor(state, 'chat-both', {
+      let legacy = legacyFor(state, 'chat-both', {
         'chart.html': '<p>older</p>',
         'other.html': '<p>saved visual</p>'
       })
       const both = currentFor(state, 'chat-both', { 'chart.html': '<p>current</p>' })
+      renameSync(legacy, `${both}.expired`)
+      legacy = `${both}.expired`
       fsFaults.operation = operation
       const log = logger()
 

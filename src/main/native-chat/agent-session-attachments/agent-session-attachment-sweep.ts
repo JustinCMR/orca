@@ -11,6 +11,7 @@
 
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { isDefinitiveAbsence } from '../../../shared/definitive-filesystem-absence'
 import type Database from '../../sqlite/sync-database'
 import {
   finishUploadSweep,
@@ -31,6 +32,8 @@ export type AgentSessionAttachmentSweepFacts = {
   /** Every chat this host holds a record for; null while that list is incomplete (records still
    *  owed their import), when no chat's claims can be judged orphaned. */
   recordedSessionIds: () => Pick<ReadonlySet<string>, 'has'> | null
+  /** After each removal attempt, before the database work that may throw. */
+  onUploadRemoved?: (uploadDir: string) => void
 }
 
 export type AgentSessionAttachmentSweepResult = { removed: string[] }
@@ -43,8 +46,12 @@ export async function sweepAgentSessionAttachments(
   const removed: string[] = []
   // Read again at every statement: the host may close the connection while the sweep awaits disk.
   const { database } = facts
+  const remove = async (uploadDir: string): Promise<void> => {
+    await removeQuietly(uploadDir)
+    facts.onUploadRemoved?.(uploadDir)
+  }
   for (const uploadId of withDatabase(database, listUploadsBeingSwept) ?? []) {
-    await removeQuietly(join(store.rootDir, uploadId))
+    await remove(join(store.rootDir, uploadId))
     withDatabase(database, (db) => finishUploadSweep(db, uploadId))
   }
   for (const uploadId of await listDirectories(store.rootDir)) {
@@ -52,13 +59,13 @@ export async function sweepAgentSessionAttachments(
       continue
     }
     const uploadDir = join(store.rootDir, uploadId)
-    const stored = (await listEntries(uploadDir)).some(
+    const stored = (await readdir(uploadDir)).some(
       (entry) => entry !== AGENT_SESSION_ATTACHMENT_PART_FILE
     )
     const ageMs = now - (await modifiedAt(uploadDir))
     if (!stored) {
       if (ageMs > ABANDONED_PART_MAX_AGE_MS) {
-        await removeQuietly(uploadDir)
+        await remove(uploadDir)
         removed.push(uploadDir)
       }
       continue
@@ -70,7 +77,7 @@ export async function sweepAgentSessionAttachments(
     ) {
       continue
     }
-    await removeQuietly(uploadDir)
+    await remove(uploadDir)
     withDatabase(database, (db) => finishUploadSweep(db, uploadId))
     removed.push(uploadDir)
   }
@@ -91,20 +98,15 @@ function withDatabase<T>(
   return db ? run(db) : undefined
 }
 
-async function listEntries(dir: string): Promise<string[]> {
-  try {
-    return await readdir(dir)
-  } catch {
-    return []
-  }
-}
-
 async function listDirectories(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir, { withFileTypes: true })
     return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
-  } catch {
-    return []
+  } catch (error) {
+    if (isDefinitiveAbsence(error)) {
+      return []
+    }
+    throw error
   }
 }
 

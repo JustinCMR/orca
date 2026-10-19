@@ -25,6 +25,8 @@ export type UiWindowApi = {
   restoreNativeChatPastes: (
     paths: string[]
   ) => Promise<{ path: string; kept: boolean; exists: boolean }[]>
+  /** A sweep tried to remove this chat-attachment upload folder; drafts naming it check again. */
+  onAgentSessionUploadRemoved: (callback: (uploadDir: string) => void) => () => void
   readClipboardImageThumbnail: () => Promise<ClipboardImageThumbnail | null>
   writeClipboardText: (text: string) => Promise<void>
   writeTerminalClipboardText: (text: string) => Promise<void>

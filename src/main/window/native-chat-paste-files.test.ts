@@ -210,6 +210,13 @@ describe('native-chat paste folder on disk', () => {
 
   it('reports nothing kept when the folder does not exist yet', async () => {
     rmSync(folder, { recursive: true })
+    await expect(
+      resolveLocalFileRequestPath(
+        path.join(root, 'agent-session-attachments', 'upload', 'gone.png'),
+        { kind: 'chat-image' },
+        NO_PROJECTS
+      )
+    ).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(restoreNativeChatPastes([path.join(folder, 'orca-paste-1.png')])).resolves.toEqual(
       [{ path: path.join(folder, 'orca-paste-1.png'), kept: false, exists: false }]
     )

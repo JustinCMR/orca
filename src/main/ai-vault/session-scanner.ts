@@ -1,4 +1,8 @@
-import type { AiVaultListResult, AiVaultScanIssue, AiVaultSession } from '../../shared/ai-vault-types'
+import type {
+  AiVaultListResult,
+  AiVaultScanIssue,
+  AiVaultSession
+} from '../../shared/ai-vault-types'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import { withSpan } from '../observability/tracer'
 import { sessionSortTime } from './session-scanner-accumulator'
@@ -17,7 +21,6 @@ import { cursorChatMetaRefusals, withCursorChatMetaScan } from './session-scanne
 import type { AiVaultScanOptions } from './session-scanner-types'
 import { clampPositiveInteger } from './session-scanner-values'
 import { throwIfAiVaultScanCancelled } from './ai-vault-scan-cancellation'
-import { noteAiVaultScanReading } from './ai-vault-scan-progress'
 import { DEFAULT_AI_VAULT_SCAN_LIMIT } from '../../shared/ai-vault-session-depth'
 import { withDevinSessionsDbScan } from './session-scanner-devin-db'
 import { withOpenCodeSqliteScanScope } from './session-scanner-opencode-sqlite-scan-scope'
@@ -71,7 +74,6 @@ async function scanAiVaultSessionStores(options: AiVaultScanOptions): Promise<Ai
 
         const candidates = await sessionCandidatesFromDiscoveries(discoveries, options)
         const parseCandidates = candidates.slice(0, limit * SESSION_PARSE_CANDIDATE_MULTIPLIER)
-        noteAiVaultScanReading(options.signal, parseCandidates.length)
 
         const parsedSessions = await parseSessionCandidates({
           candidates: parseCandidates,
