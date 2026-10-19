@@ -7,7 +7,10 @@ import {
   WORKSPACE_FILE_DRAG_SOURCE_MIME,
   WORKSPACE_FILE_PATHS_MIME
 } from '../lib/workspace-file-drag'
-import type { PreparedDroppedPaths } from '../../../shared/native-file-drop-preparation'
+import type {
+  PrepareDroppedPathsRequest,
+  PreparedDroppedPaths
+} from '../../../shared/native-file-drop-preparation'
 import { withFallback } from '../web/preload-api/web-fallback-api'
 import {
   createOsFileDropSequence,
@@ -22,7 +25,7 @@ type DropHandler<Destination = undefined> = (
 
 const getPathForFile = vi.fn((file: File) => `/dropped/${file.name}`)
 const prepareDroppedPaths = vi.fn(
-  async ({ paths }: { paths: string[] }): Promise<PreparedDroppedPaths> => ({
+  async ({ paths }: PrepareDroppedPathsRequest): Promise<PreparedDroppedPaths> => ({
     paths,
     failures: []
   })
