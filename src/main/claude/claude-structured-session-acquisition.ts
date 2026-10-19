@@ -303,9 +303,9 @@ export async function acquireClaudeSession({
       sessions,
       attempt,
       translator,
-      prompts
+      prompts,
+      releaseAcquisition: () => acquisitions.deleteIfCurrent(sessionId, attempt)
     })
-    acquisitions.deleteIfCurrent(sessionId, attempt)
     throw acquisitionError
   } finally {
     attempt.finish()
