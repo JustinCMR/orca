@@ -46,7 +46,7 @@ async function namedFeed() {
   feed.publish('session')
   const name = (conversationName: string) => {
     record = { ...record, conversationName }
-    feed.publishConversationName('session')
+    feed.publishRecordNotes('session')
   }
   return { feed, events, sessions, name }
 }
@@ -63,7 +63,7 @@ it('publishes a held chat its saved name once, and not again for an unchanged re
   expect(lastName(events)).toBe('Explain the parser')
   const count = events.length
   feed.publish('session')
-  feed.publishConversationName('session')
+  feed.publishRecordNotes('session')
   expect(events).toHaveLength(count)
 })
 
@@ -91,6 +91,6 @@ it('keeps the name on the summary a closing chat retains', async () => {
 it('publishes nothing for a chat this host never projected', async () => {
   const { feed, events } = await namedFeed()
   const count = events.length
-  feed.publishConversationName('unknown-session')
+  feed.publishRecordNotes('unknown-session')
   expect(events).toHaveLength(count)
 })

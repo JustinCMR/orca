@@ -30,6 +30,7 @@ import { retireOutgrownStructuredAgentSessionChild } from './structured-agent-se
 import { structuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
 import { applyStructuredAgentSessionMessageOptions } from './structured-agent-session-message-options'
 import type { StructuredAgentSessionMutationContext } from './structured-agent-session-mutation-context'
+import { clearStructuredAgentSessionSleepMark } from './structured-agent-session-workspace-sleep'
 
 export type StructuredAgentSessionConversationDelivery = {
   loop: StructuredAgentSessionDeliveryLoop
@@ -115,6 +116,11 @@ export function createStructuredAgentSessionConversationDelivery(input: {
         stopAgent: input.stopOutgrownAgent,
         logger: deps.logger
       })
+      await clearStructuredAgentSessionSleepMark(
+        deps,
+        sessionId,
+        input.clientDelivery.publishStatus
+      )
       return input.ensureProviderChild(sessionId, startedFor)
     },
     readiness: input.readiness,

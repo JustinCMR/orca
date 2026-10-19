@@ -175,7 +175,7 @@ export const STRUCTURED_AGENT_SESSION_METHODS = [
       requireStructuredCapability(ctx)
       const installed = getStructuredAgentSessionHost()
       if (installed) {
-        return installed.sleepWorkspace(params.workspaceId)
+        return installed.sleepWorkspace(params.workspaceId, params.markAsleep)
       }
       let store: Awaited<ReturnType<typeof ctx.runtime.openAgentSessionRecordStore>>
       try {
@@ -183,14 +183,14 @@ export const STRUCTURED_AGENT_SESSION_METHODS = [
       } catch (error) {
         const appeared = getStructuredAgentSessionHost()
         if (appeared) {
-          return appeared.sleepWorkspace(params.workspaceId)
+          return appeared.sleepWorkspace(params.workspaceId, params.markAsleep)
         }
         console.warn('[agent-session] workspace sleep record inventory unavailable', error)
         return { stoppedSessionIds: [], failures: [{ reason: 'inventory-unavailable' }] }
       }
       const appeared = getStructuredAgentSessionHost()
       if (appeared) {
-        return appeared.sleepWorkspace(params.workspaceId)
+        return appeared.sleepWorkspace(params.workspaceId, params.markAsleep)
       }
       try {
         const records = store

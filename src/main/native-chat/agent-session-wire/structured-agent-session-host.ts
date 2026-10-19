@@ -213,7 +213,7 @@ export class StructuredAgentSessionHost {
     this.lifetime.close(sessionId, cause)
 
   /** One bounded host-owned snapshot; a tab need not be visible for its child to be stopped. */
-  sleepWorkspace = (workspaceId: string): Promise<{ stoppedSessionIds: string[] }> =>
+  sleepWorkspace = (workspaceId: string, markAsleep?: boolean) =>
     sleepStructuredAgentSessionWorkspace(
       {
         deps: this.deps,
@@ -221,9 +221,11 @@ export class StructuredAgentSessionHost {
         lifetime: this.lifetime,
         sessions: this.sessions,
         deliveryRunning: (sessionId) => this.conversationDelivery.loop.isRunning(sessionId),
-        childWorkIncomplete: this.clientDelivery.childWorkIncomplete
+        childWorkIncomplete: this.clientDelivery.childWorkIncomplete,
+        publishRecordNotes: this.clientDelivery.publishRecordNotes
       },
-      workspaceId
+      workspaceId,
+      markAsleep
     )
 
   supportsCreate = (location: AgentSessionExecutionLocation, agent: string): boolean =>
@@ -350,7 +352,7 @@ export class StructuredAgentSessionHost {
 
   /** Every session's projected status for session lists; unlike `subscribe`, retains nothing. */
   subscribeStatus = this.clientDelivery.subscribeStatus
-  publishConversationName = this.clientDelivery.publishConversationName
+  publishConversationName = this.clientDelivery.publishRecordNotes
 
   /** Turns that settle, and prompts raised, from now on. Live-only: nothing missed is replayed. */
   subscribeTurnCompletions = this.clientDelivery.subscribeTurnCompletions

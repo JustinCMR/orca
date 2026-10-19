@@ -114,11 +114,13 @@ export function createStructuredAgentSessionConversationLifetime(host: {
     return result
   }
 
-  const closeForWorkspaceSleep = (
+  /** `receipt` runs in the same step as the stop, so nothing can run the chat between them. */
+  const closeForWorkspaceSleep = <T>(
     sessionId: string,
     workspaceId: string,
-    executionHostId: ExecutionHostId
-  ): Promise<{ fence: number; stopped: boolean } | null> => {
+    executionHostId: ExecutionHostId,
+    receipt: (stopped: boolean) => Promise<T>
+  ): Promise<T | null> => {
     const matches = (): boolean => {
       const location = deps().store.getRecord(sessionId)?.location
       return location?.workspaceId === workspaceId && location.executionHostId === executionHostId
@@ -160,9 +162,7 @@ export function createStructuredAgentSessionConversationLifetime(host: {
             error
           })
       )
-      // Lease release advances the fence; preserve the value after this close for the caller's
-      // final identity check against a later restart.
-      return { fence: deps().store.getRecord(sessionId)?.lease.runtimeFence ?? fence, stopped }
+      return receipt(stopped)
     })
   }
 

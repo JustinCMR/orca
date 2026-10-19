@@ -37,6 +37,7 @@ export function structuredStatusSummariesEqual(
     a.lastAssistantMessage === b.lastAssistantMessage &&
     a.launchDirectory === b.launchDirectory &&
     a.conversationName === b.conversationName &&
+    a.sleptAt === b.sleptAt &&
     a.turnOutcome === b.turnOutcome &&
     a.stopping === b.stopping &&
     agentSessionBackgroundTasksEqual(a.backgroundTasks, b.backgroundTasks) &&

@@ -62,7 +62,32 @@ export function structuredAgentSessionStatusSummary({
     ...childWork,
     ...(providerSession ? { providerSession } : {}),
     ...(launchDirectory ? { launchDirectory } : {}),
-    ...(record?.conversationName ? { conversationName: record.conversationName } : {}),
+    ...structuredAgentSessionRecordNotes(record),
     updatedAt: journal.lastActivityAt() || now()
   }
+}
+
+/** What the row reads from the record alone; a closed chat's retained summary re-reads it too. */
+function structuredAgentSessionRecordNotes(
+  record: AgentSessionRecord | null
+): Pick<AgentSessionStatusSummary, 'conversationName' | 'sleptAt'> {
+  return {
+    ...(record?.conversationName ? { conversationName: record.conversationName } : {}),
+    ...(typeof record?.sleptAt === 'number' ? { sleptAt: record.sleptAt } : {})
+  }
+}
+
+/** A retained summary re-read from its record; null when there is none or nothing it shows moved. */
+export function withRecordNotes(
+  summary: AgentSessionStatusSummary | undefined,
+  record: AgentSessionRecord | null
+): AgentSessionStatusSummary | null {
+  if (!summary) {
+    return null
+  }
+  const { conversationName: _name, sleptAt: _sleptAt, ...rest } = summary
+  const next = { ...rest, ...structuredAgentSessionRecordNotes(record) }
+  return next.conversationName === summary.conversationName && next.sleptAt === summary.sleptAt
+    ? null
+    : next
 }

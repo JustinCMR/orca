@@ -23,7 +23,10 @@ import type {
   StatusFeedSession,
   StructuredAgentSessionStatusFeedDeps
 } from './structured-agent-session-status-feed-deps'
-import { structuredAgentSessionStatusSummary } from './structured-agent-session-status-summary'
+import {
+  structuredAgentSessionStatusSummary,
+  withRecordNotes
+} from './structured-agent-session-status-summary'
 import { structuredStatusChildWork } from './structured-agent-session-status-child-work'
 import {
   StructuredAgentSessionJournalProjections,
@@ -158,20 +161,18 @@ export class StructuredAgentSessionStatusFeed {
     })
   }
 
-  /** The record's name changed outside the journal. A closed chat's retained row follows it too,
-   *  so every list still showing that conversation learns the name without a tab. */
-  publishConversationName(sessionId: string): void {
+  /** The record's name or Sleep mark changed outside the journal. A closed chat's retained row
+   *  follows it too, so every list still showing that conversation learns it without a tab. */
+  publishRecordNotes(sessionId: string): void {
     if (this.deps.sessions.has(sessionId)) {
       this.publish(sessionId)
       return
     }
     const publication = this.published.get(sessionId)
-    const name = this.deps.getRecord(sessionId)?.conversationName
-    if (!publication || publication.summary.conversationName === name) {
+    const summary = withRecordNotes(publication?.summary, this.deps.getRecord(sessionId))
+    if (!publication || !summary) {
       return
     }
-    const { conversationName: _previous, ...rest } = publication.summary
-    const summary = name ? { ...rest, conversationName: name } : rest
     this.published.set(sessionId, { ...publication, summary })
     this.broadcast({ type: 'status', session: summary })
   }

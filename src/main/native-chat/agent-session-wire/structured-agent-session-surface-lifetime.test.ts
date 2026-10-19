@@ -291,22 +291,6 @@ describe('a chat that closes', () => {
     expect(store.getRecord(SESSION)).not.toBeNull()
   })
 
-  it('does not count a chat whose send was accepted after the stop as stopped', async () => {
-    await attach()
-    await vi.waitFor(() => expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false))
-    const close = host['lifetime'].closeForWorkspaceSleep
-    vi.spyOn(host['lifetime'], 'closeForWorkspaceSleep').mockImplementation(async (...args) => {
-      const result = await close(...args)
-      const body = hostTestMessage('newer send')
-      // The later work exists once the send is accepted, not merely once it is queued.
-      const sent = host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
-      expect(await sent).toMatchObject({ ok: true })
-      return result
-    })
-
-    expect(await host.sleepWorkspace('workspace-1')).toEqual({ stoppedSessionIds: [] })
-  })
-
   it('stops the provider child it started', async () => {
     await attach()
 
