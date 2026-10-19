@@ -187,18 +187,64 @@ describe('the host-stamped turn end', () => {
     expect(row()).toMatchObject({ state: 'done', turnEndedAt: ended })
   })
 
-  it("keeps a relay's own end and never mints one for an older relay's Stop", () => {
-    const stop = {
-      paneKey: PANE,
-      tabId: 'tab-1',
-      source: 'claude' as const,
-      hookEventName: 'Stop',
-      payload: { state: 'done' as const, prompt: 'relayed', agentType: 'claude' as const }
+  it("keeps a relay's own end, never mints an older relay's, and restates none over an inferred cancel", () => {
+    const grok = { paneKey: PANE, tabId: 'tab-1', source: 'grok' as const, hasExplicitPrompt: true }
+    const working = {
+      state: 'working' as const,
+      prompt: 'Fix it',
+      agentType: 'grok' as const,
+      mainAgent: { state: 'working' as const, stateStartedAt: 1 }
     }
+    const stop = { ...grok, hookEventName: 'stop', payload: { ...working, state: 'done' as const } }
     server.ingestRemote(stop, 'wsl-old')
     expect(row()).not.toHaveProperty('turnEndedAt')
-
     server.ingestRemote({ ...stop, turnEndedAt: 42, turnEndDisposition: 'ambiguous' }, 'wsl-old')
     expect(row()).toMatchObject({ turnEndedAt: 42, turnEndDisposition: 'ambiguous' })
+
+    // The relay never learns a non-Claude cancel inferred here, so its late cancel hook carries an end.
+    server.ingestRemote({ ...grok, hookEventName: 'user_prompt_submit', payload: working }, 'wsl')
+    const turn = row()!
+    expect(
+      server.inferInterrupt({
+        paneKey: PANE,
+        baselineUpdatedAt: turn.receivedAt,
+        baselineStateStartedAt: turn.stateStartedAt,
+        baselinePrompt: turn.prompt,
+        baselineAgentType: 'grok',
+        intent: 'ctrl-c'
+      })
+    ).toBe(true)
+    const cancelled = row()
+    const mainAgent = {
+      state: 'done' as const,
+      outcome: 'cancellation' as const,
+      stateStartedAt: 2
+    }
+    server.ingestRemote(
+      {
+        ...grok,
+        hookEventName: 'stop_cancelled',
+        turnEndedAt: 50,
+        turnEndDisposition: 'identified',
+        payload: { ...working, state: 'done', mainAgent }
+      },
+      'wsl'
+    )
+    expect(row()).toMatchObject({ state: 'done', stateStartedAt: cancelled?.stateStartedAt })
+    expect(row()).not.toHaveProperty('turnEndedAt')
+
+    // The next turn reaches main as working first, so its end is the relay's again.
+    const next = { ...working, prompt: 'Again' }
+    server.ingestRemote({ ...grok, hookEventName: 'user_prompt_submit', payload: next }, 'wsl')
+    server.ingestRemote(
+      {
+        ...stop,
+        turnEndedAt: 60,
+        turnEndDisposition: 'identified',
+        payload: { ...next, state: 'done' }
+      },
+      'wsl'
+    )
+    expect(row()).toMatchObject({ turnEndedAt: 60, turnEndDisposition: 'identified' })
   })
 })
