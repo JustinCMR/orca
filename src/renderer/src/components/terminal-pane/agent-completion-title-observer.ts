@@ -13,7 +13,7 @@ type TitleObserverOptions = {
   holdTitleCompletionPending: (title: string) => void
   hasPendingTitle: () => boolean
   dropPendingTitle: () => void
-  markTitleCompletionNotified: (title: string) => void
+  claimTitleCompletion: (title: string) => boolean
   dispatchTitleCompletion: (title: string) => void
 }
 
@@ -27,7 +27,7 @@ export function createAgentCompletionTitleObserver({
   holdTitleCompletionPending,
   hasPendingTitle,
   dropPendingTitle,
-  markTitleCompletionNotified,
+  claimTitleCompletion,
   dispatchTitleCompletion
 }: TitleObserverOptions) {
   function titleCompletionAgentIdentity(title: string): string | null {
@@ -63,8 +63,9 @@ export function createAgentCompletionTitleObserver({
   }
 
   function dispatchTitle(title: string): void {
-    markTitleCompletionNotified(title)
-    dispatchTitleCompletion(title)
+    if (claimTitleCompletion(title)) {
+      dispatchTitleCompletion(title)
+    }
   }
 
   function observeTitle(title: string): void {
@@ -116,6 +117,7 @@ export function createAgentCompletionTitleObserver({
   }
 
   return {
+    dispatchTitle,
     observeTitle,
     observeClassifiedTitleCompletion,
     titleCompletionAgentIdentity

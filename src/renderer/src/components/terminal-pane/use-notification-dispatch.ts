@@ -13,7 +13,6 @@ import { buildAgentNotificationId } from '../../../../shared/agent-notification-
 import { agentMainAgentVerdict } from '../../../../shared/agent-main-agent-verdict'
 import { shareCompatibleTitleIdentityGroup } from '../../../../shared/agent-title-owner'
 import {
-  agentStatusAuthorityObservedAt,
   isFreshNonDoneAgentStatus,
   type AgentStatusEntry
 } from '../../../../shared/agent-status-types'
@@ -34,26 +33,7 @@ import {
   readAgentAttentionNotificationSound
 } from '@/attention/agent-attention-notification-delivery'
 
-// Why: the hook row each pane's last completion already announced, on the authority's own clock
-// so host clock skew and relay restamps cannot make an announced turn look new.
-const announcedHookEvidenceByPaneKey = new Map<string, number>()
-
-export function resetAnnouncedHookEvidenceForTest(): void {
-  announcedHookEvidenceByPaneKey.clear()
-}
-
-function announceHookEvidence(
-  paneKey: string,
-  row: AgentStatusEntry,
-  rows: Record<string, AgentStatusEntry>
-): void {
-  for (const key of announcedHookEvidenceByPaneKey.keys()) {
-    if (!rows[key]) {
-      announcedHookEvidenceByPaneKey.delete(key)
-    }
-  }
-  announcedHookEvidenceByPaneKey.set(paneKey, agentStatusAuthorityObservedAt(row))
-}
+const AGENT_NOTIFICATION_SNAPSHOT_MAX_AGE_MS = 10_000
 
 function agentSnapshotMatchesExplicitTitle(
   snapshot: { agentType?: string | null } | undefined,
@@ -111,20 +91,11 @@ export function dispatchTerminalNotification(
     agentSnapshotMatchesExplicitTitle(event.agentStatusSnapshot, explicitTitleAgentType)
       ? event.agentStatusSnapshot
       : undefined
-  // Why: a settled row of this pane's agent is the hook status of its latest turn end, however
-  // long ago it landed; whether that turn is new is judged by announcement, not by age.
-  const settledStoredAgentStatus =
+  const freshStoredAgentStatus =
     storedAgentStatus &&
-    storedAgentStatus.state !== 'working' &&
-    storedAgentStatus.restoredUnconfirmed !== true &&
+    Date.now() - storedAgentStatus.updatedAt <= AGENT_NOTIFICATION_SNAPSHOT_MAX_AGE_MS &&
     agentSnapshotMatchesExplicitTitle(storedAgentStatus, explicitTitleAgentType)
       ? storedAgentStatus
-      : undefined
-  const unannouncedStoredAgentStatus =
-    settledStoredAgentStatus &&
-    announcedHookEvidenceByPaneKey.get(event.paneKey ?? '') !==
-      agentStatusAuthorityObservedAt(settledStoredAgentStatus)
-      ? settledStoredAgentStatus
       : undefined
   if (
     event.source === 'agent-task-complete' &&
@@ -136,26 +107,14 @@ export function dispatchTerminalNotification(
     // confirmed process exit is independent authority that the turn ended.
     return
   }
-  if (
-    event.source === 'agent-task-complete' &&
-    event.agentCompletionSource !== 'process-exit' &&
-    !eventAgentStatusSnapshot &&
-    settledStoredAgentStatus &&
-    !unannouncedStoredAgentStatus
-  ) {
-    // Why: on a hook-reporting pane hooks own turn ends; a title edge with no new hook status since
-    // the last completion ended no turn (Claude's /btw side question spins the title, fires no hook).
-    return
-  }
   // Why: a process can die before its hook emits done; do not label the
   // resulting completion notification with that stale active state or prompt.
   const agentStatus =
     event.source === 'agent-task-complete'
       ? (eventAgentStatusSnapshot ??
-        (event.agentCompletionSource === 'process-exit' &&
-        unannouncedStoredAgentStatus?.state !== 'done'
+        (event.agentCompletionSource === 'process-exit' && freshStoredAgentStatus?.state !== 'done'
           ? undefined
-          : unannouncedStoredAgentStatus))
+          : freshStoredAgentStatus))
       : undefined
   if (
     event.source === 'agent-task-complete' &&
@@ -163,11 +122,8 @@ export function dispatchTerminalNotification(
   ) {
     return
   }
-  if (event.source === 'agent-task-complete' && event.paneKey && settledStoredAgentStatus) {
-    announceHookEvidence(event.paneKey, settledStoredAgentStatus, state.agentStatusByPaneKey)
-  }
   const agentNotificationStateStartedAt =
-    eventAgentStatusSnapshot?.stateStartedAt ?? unannouncedStoredAgentStatus?.stateStartedAt
+    eventAgentStatusSnapshot?.stateStartedAt ?? freshStoredAgentStatus?.stateStartedAt
   const attentionDecision = resolveAgentAttention(
     {
       subject: { workspaceId: worktreeId, surfaceKey: event.paneKey },

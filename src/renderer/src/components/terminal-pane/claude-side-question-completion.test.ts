@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setPresenceGated } from '@/hooks/agent-auto-ack-presence'
 import { createAgentCompletionCoordinator } from './agent-completion-coordinator'
 import { useAgentCompletionCoordinatorLifecycle } from './agent-completion-coordinator-test-harness'
+import { dispatchTerminalNotification } from './use-notification-dispatch'
 import {
-  dispatchTerminalNotification,
-  resetAnnouncedHookEvidenceForTest
-} from './use-notification-dispatch'
+  observeAgentHookCompletionForNotification,
+  resetAgentHookCompletionNotificationCoordinators
+} from '@/hooks/agent-hook-completion-notifications'
+import { hookLaneOwnsPaneTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
 import {
   PANE_KEY,
   makeAgentStatus,
@@ -49,7 +51,7 @@ describe('Claude completion banner', () => {
   beforeEach(() => {
     setPresenceGated(false)
     mockState = resetNotificationDispatchMockState()
-    resetAnnouncedHookEvidenceForTest()
+    resetAgentHookCompletionNotificationCoordinators()
     delete mockState.agentStatusByPaneKey[PANE_KEY]
   })
 
@@ -58,13 +60,14 @@ describe('Claude completion banner', () => {
     vi.unstubAllGlobals()
   })
 
-  it("announces the turn end with the agent's last message and stays quiet for a /btw side question", () => {
-    // The pane lane reads titles only; Claude's hook rows land in the store.
-    const coordinator = createAgentCompletionCoordinator({
+  it("announces the turn end once with the agent's last message and stays quiet for a /btw side question", () => {
+    // Both real lanes, wired as in the app: hooks feed the hook lane, titles feed the pane lane.
+    const titleLane = createAgentCompletionCoordinator({
       paneKey: PANE_KEY,
       getPtyId: () => 'pty-1',
       inspectProcess: vi.fn(),
       isLive: () => true,
+      titleCompletionOwnedByHooks: (title) => hookLaneOwnsPaneTurnEnds(PANE_KEY, title),
       dispatchCompletion: (title) =>
         dispatchTerminalNotification('wt-primary', {
           source: 'agent-task-complete',
@@ -72,31 +75,35 @@ describe('Claude completion banner', () => {
           paneKey: PANE_KEY
         })
     })
-    const launchedAt = Date.now()
+    let previousAt = 0
     for (const event of CAPTURE) {
-      vi.setSystemTime(launchedAt + event.at)
+      vi.advanceTimersByTime(event.at - previousAt)
+      previousAt = event.at
       if ('title' in event) {
-        coordinator.observeTitle(event.title)
-      } else {
-        mockState.agentStatusByPaneKey[PANE_KEY] = makeAgentStatus(PANE_KEY, {
-          agentType: 'claude',
-          prompt: 'Reply with one short sentence about the sea.',
-          ...(event.hook === 'Stop'
-            ? { state: 'done', lastAssistantMessage: SEA }
-            : { state: 'working', lastAssistantMessage: undefined })
-        })
+        titleLane.observeTitle(event.title)
+        continue
       }
+      const row = makeAgentStatus(PANE_KEY, {
+        agentType: 'claude',
+        prompt: 'Reply with one short sentence about the sea.',
+        ...(event.hook === 'Stop'
+          ? { state: 'done', lastAssistantMessage: SEA }
+          : { state: 'working', lastAssistantMessage: undefined })
+      })
+      mockState.agentStatusByPaneKey[PANE_KEY] = row
+      observeAgentHookCompletionForNotification({
+        paneKey: PANE_KEY,
+        worktreeId: 'wt-primary',
+        payload: row
+      })
     }
+    vi.advanceTimersByTime(5_000)
 
     expect(window.api.notifications.dispatch).toHaveBeenCalledTimes(1)
     expect(window.api.notifications.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        terminalTitle: '✳ The sea',
-        agentType: 'claude',
-        agentState: 'done',
-        agentLastAssistantMessage: SEA
-      })
+      expect.objectContaining({ agentType: 'claude', agentLastAssistantMessage: SEA })
     )
     expect(mockState.markAgentAttentionUnread).toHaveBeenCalledTimes(1)
+    titleLane.dispose()
   })
 })

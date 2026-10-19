@@ -181,7 +181,7 @@ export function createAgentCompletionCoordinator(
     holdTitleCompletionPending,
     hasPendingTitle: () => pendingTitle.get() !== null,
     dropPendingTitle,
-    markTitleCompletionNotified,
+    claimTitleCompletion,
     dispatchTitleCompletion: (title) =>
       dispatchCompletion('title', title, {
         completionIdentity: {
@@ -208,14 +208,7 @@ export function createAgentCompletionCoordinator(
     }
     const title = currentPendingTitle.title
     dropPendingTitle()
-    markTitleCompletionNotified(title)
-    dispatchCompletion('title', title, {
-      completionIdentity: {
-        source: 'title',
-        identity: title,
-        agentIdentity: titleObserver.titleCompletionAgentIdentity(title)
-      }
-    })
+    titleObserver.dispatchTitle(title)
   }
 
   function holdTitleCompletionPending(title: string): void {
@@ -253,12 +246,17 @@ export function createAgentCompletionCoordinator(
     recordTitleWorking()
   }
 
-  function markTitleCompletionNotified(title: string): void {
+  function claimTitleCompletion(title: string): boolean {
+    // Why: checked before claiming, since a title claim would swallow the hook lane's Done for this turn.
+    if (options.titleCompletionOwnedByHooks?.(title) === true) {
+      return false
+    }
     completionState.lastCompletionIdentity = {
       source: 'title',
       identity: title,
       agentIdentity: titleObserver.titleCompletionAgentIdentity(title)
     }
+    return true
   }
 
   hookObserver = createAgentCompletionHookObserver({

@@ -8,6 +8,7 @@ import { notifyCodexPaneBoundForStaleSweep } from '@/lib/codex-stale-pane-sweep'
 import { createTerminalGitHubPRLinkDetector } from '../../../../../shared/terminal-github-pr-link-detector'
 import { setRendererPtyVisibilityClaim } from '../pty-renderer-delivery-claims'
 import { AGENT_TASK_COMPLETE_NOTIFICATION_GRACE_MS } from '../agent-task-complete-policy'
+import { hasPendingHookLaneCompletion } from '@/hooks/agent-hook-completion-notifications'
 
 import {
   isAgentTaskCompleteNotificationEnabled,
@@ -251,6 +252,7 @@ export function installPanePtyVisibilityBind(session: ConnectPanePtySession): vo
   session.hasPendingAgentTaskCompleteNotification = (): boolean =>
     isAgentTaskCompleteNotificationEnabled() &&
     (session.agentCompletionCoordinator.hasPendingHookDoneCompletion() ||
+      hasPendingHookLaneCompletion(session.cacheKey) ||
       session.agentTaskCompleteNotificationGraceTimer !== null ||
       session.agentTaskCompleteNotificationMaxTimer !== null ||
       session.agentTaskCompleteStatusUnsubscribe !== null)

@@ -319,6 +319,15 @@ export function observeAgentHookCompletionForNotification({
   }
 }
 
+// Why: false while re-arming after a restart or settings flip, when this lane would not announce a Done.
+export function hookLaneTracksPaneTurns(paneKey: string): boolean {
+  return coordinatorsByPaneKey.has(paneKey) && !paneKeysRequiringFreshWorking.has(paneKey)
+}
+
+export function hasPendingHookLaneCompletion(paneKey: string): boolean {
+  return coordinatorsByPaneKey.get(paneKey)?.coordinator.hasPendingHookDoneCompletion() === true
+}
+
 export function resetAgentHookCompletionNotificationCoordinators(): void {
   for (const entry of coordinatorsByPaneKey.values()) {
     entry.coordinator.dispose()

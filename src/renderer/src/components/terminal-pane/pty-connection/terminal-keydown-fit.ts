@@ -8,6 +8,7 @@ import { isFreshNonDoneAgentStatus } from '../../../../../shared/agent-status-ty
 import { isCtrlCKeyEvent, isPlainEscapeKeyEvent } from '../agent-interrupt-inference'
 import { createAgentCompletionCoordinator } from '../agent-completion-coordinator'
 import { dispatchAgentHookTerminalLifecycle } from '../agent-hook-terminal-lifecycle'
+import { hookLaneOwnsPaneTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
 import { resolveCompatibleAgentTypeForOwner } from '../../../../../shared/agent-title-owner'
 import { registerTerminalSideEffectFactConsumer } from '../terminal-side-effect-facts-handler'
 
@@ -176,6 +177,7 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
     inspectProcess: inspectRuntimeTerminalProcess,
     dispatchHookLifecycle: (payload) =>
       dispatchAgentHookTerminalLifecycle(session.cacheKey, payload),
+    titleCompletionOwnedByHooks: (title) => hookLaneOwnsPaneTurnEnds(session.cacheKey, title),
     shouldSuppressProcessReplacementCompletion: (_exited, replacement) => {
       const currentStatus = useAppStore.getState().agentStatusByPaneKey[session.cacheKey]
       const currentAgentForReplacement = resolveCompatibleAgentTypeForOwner(

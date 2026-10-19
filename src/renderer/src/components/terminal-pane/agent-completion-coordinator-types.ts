@@ -42,6 +42,8 @@ export type AgentCompletionCoordinatorOptions = {
   /** Fired once per confirmed exit (settled local absence, or the host's `exited` verdict). */
   onForegroundAgentExited?: (exited: RecognizedAgentProcess) => void
   isLive: () => boolean
+  /** True when this pane's turn ends belong to its hook lane, so a title idle edge announces nothing. */
+  titleCompletionOwnedByHooks?: (title: string) => boolean
   shouldPollProcessCadence?: () => boolean
   // Why: a host that publishes foreground evidence with its inventory lets a
   // pane without agent evidence stay push-driven instead of scheduling

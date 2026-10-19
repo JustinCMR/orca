@@ -28,6 +28,8 @@ import {
   registerTerminalSideEffectFactConsumer
 } from './terminal-side-effect-facts-handler'
 import { dispatchTerminalNotification } from './use-notification-dispatch'
+import { hasPendingHookLaneCompletion } from '@/hooks/agent-hook-completion-notifications'
+import { hookLaneOwnsPaneTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
 import { acquireHiddenRendererPtyDeliveryClaim } from './pty-renderer-delivery-claims'
 import { isRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 
@@ -101,7 +103,7 @@ export function startParkedTerminalByteWatcher(
 
   // Why: a BEL OS notification only yields when the pending completion would itself produce an OS notification (live-path parity).
   const hasPendingAgentTaskCompleteNotification = (): boolean =>
-    agentTaskCompleteTimer !== null &&
+    (agentTaskCompleteTimer !== null || hasPendingHookLaneCompletion(paneKey)) &&
     isAgentTaskCompleteOsNotificationEnabled(useAppStore.getState())
 
   const scheduleTerminalBellNotification = (): void => {
@@ -171,6 +173,9 @@ export function startParkedTerminalByteWatcher(
         // Why: completion supersedes a concurrent BEL so each burst yields exactly one OS notification (live-path parity).
         pendingBellNotification = false
         clearBellNotificationTimer()
+        if (hookLaneOwnsPaneTurnEnds(paneKey, title)) {
+          return
+        }
         dispatchTerminalNotification(worktreeId, {
           source: 'agent-task-complete',
           terminalTitle: title,
