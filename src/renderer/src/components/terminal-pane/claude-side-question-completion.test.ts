@@ -229,6 +229,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
       // The host's own derivation: its state clock, end stamp and disposition.
       const hookEvent: AgentHookEventPayload = {
         paneKey: PANE_KEY,
+        connectionId: null,
         source: 'claude',
         hookEventName: event.hook,
         ...(event.flagged ? { stopHookActive: true } : {}),
