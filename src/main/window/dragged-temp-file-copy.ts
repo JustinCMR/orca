@@ -2,10 +2,7 @@ import { constants, createWriteStream, type Stats } from 'node:fs'
 import { lstat, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import {
-  DRAG_TEMP_COPY_ROOT_NAME,
-  type NativeFileDropCopyFailureReason
-} from '../../shared/native-file-drop'
+import type { NativeFileDropCopyFailureReason } from '../../shared/native-file-drop'
 import {
   formatByteCeiling,
   REMOTE_IMPORT_MAX_FILE_BYTES,
@@ -20,9 +17,9 @@ import { ensureOwnedTempStagingRoot, getOwnedTempStagingRoot } from './owned-tem
 const TEMPORARY_ITEMS_SEGMENT = 'TemporaryItems'
 const DRAG_PROVIDER_DIR_PREFIX = 'NSIRD_'
 const COPY_DIR_PREFIX = 'orca-drop-'
-const COPY_DIR_PATTERN = /^orca-drop-[A-Za-z0-9]{6}$/
+const DRAG_TEMP_COPY_ROOT_NAME = 'orca-drops'
 // Why no expiry: a copy may be what a terminal agent, a draft or a sent message still names, and
-// nothing tells which; a structured chat's composer moves its copies into the chat store instead.
+// nothing tells which; fresh structured-chat copies enter the chat store before publication.
 
 export type DragTempCopyEnvironment = {
   platform: NodeJS.Platform
@@ -42,15 +39,6 @@ export function getDragTempCopyRoot(appTempRoot: string): string {
   return getOwnedTempStagingRoot(appTempRoot, DRAG_TEMP_COPY_ROOT_NAME)
 }
 
-/** The `orca-drop-*` folder under `copyRoot` that holds `path` directly; null for any other path.
- *  Lexical: callers resolve both through realpath first. */
-export function dragTempCopyDirectoryOf(copyRoot: string, path: string): string | null {
-  const segments = relative(copyRoot, path).split(sep)
-  return segments.length === 2 && COPY_DIR_PATTERN.test(segments[0])
-    ? join(copyRoot, segments[0])
-    : null
-}
-
 /** Lexical check only: whether a path could be a drag-temp file worth inspecting. */
 export function mayNeedDragTempCopy(path: string, platform: NodeJS.Platform): boolean {
   return platform === 'darwin' && hasDragTempMarker(resolve(path).split(sep))
@@ -58,7 +46,7 @@ export function mayNeedDragTempCopy(path: string, platform: NodeJS.Platform): bo
 
 /**
  * Copy every drag-temp path in a drop into Orca-owned storage, sequentially,
- * under the byte budget storage has left. Other paths pass through unchanged.
+ * within the per-drop byte budget. Other paths pass through unchanged.
  */
 export async function materializeDragTempPaths(
   paths: readonly string[],
@@ -92,12 +80,14 @@ export async function materializeDragTempPaths(
     return results
   } catch (error) {
     // Why: a caller that gave up never hands these out, and nothing else would remove them.
-    await removeCopies(completed.values())
+    await removeCreatedDragTempCopies(completed.values())
     throw error
   }
 }
 
-async function removeCopies(results: Iterable<DragTempCopyItemResult>): Promise<void> {
+export async function removeCreatedDragTempCopies(
+  results: Iterable<DragTempCopyItemResult>
+): Promise<void> {
   for (const result of results) {
     if (result.status === 'imported' && result.destPath !== result.sourcePath) {
       await rm(dirname(result.destPath), { recursive: true, force: true }).catch(() => undefined)

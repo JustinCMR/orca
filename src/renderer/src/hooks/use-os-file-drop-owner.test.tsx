@@ -33,10 +33,12 @@ function Owner<Destination = undefined>({
   canAccept,
   sequence,
   captureDestination,
+  consumer = 'agent',
   isDestinationLive,
   children
 }: {
   onDrop: DropHandler<Destination>
+  consumer?: 'agent' | ((destination: Destination | undefined) => 'local-chat' | 'agent')
   canAccept?: boolean
   sequence?: OsFileDropSequence
   captureDestination?: (event: DragEvent) => Destination
@@ -46,7 +48,7 @@ function Owner<Destination = undefined>({
   const ownerElementRef = useRef<HTMLElement | null>(null)
   const [ownSequence] = useState(createOsFileDropSequence)
   const options = {
-    consumer: 'agent' as const,
+    consumer,
     onDrop,
     canAccept,
     sequence: sequence ?? ownSequence,
@@ -501,7 +503,11 @@ describe('useOsFileDropOwner', () => {
     )
     const onDrop = vi.fn<DropHandler<string | null>>()
     const view = render(
-      <Owner onDrop={onDrop} captureDestination={captureDestination}>
+      <Owner
+        onDrop={onDrop}
+        captureDestination={captureDestination}
+        consumer={(destination) => (destination === 'original-folder' ? 'local-chat' : 'agent')}
+      >
         <span data-testid="row" data-folder="original-folder" />
       </Owner>
     )
@@ -509,6 +515,7 @@ describe('useOsFileDropOwner', () => {
     drag(row, 'drop')
     expect(captureDestination).toHaveBeenCalledOnce()
     expect(prepareDroppedPaths).toHaveBeenCalledOnce()
+    expect(prepareDroppedPaths.mock.calls[0][0].consumer).toBe('local-chat')
     expect(onDrop).not.toHaveBeenCalled()
     row.dataset.folder = 'recycled-folder'
     await act(async () => {

@@ -119,7 +119,9 @@ describe('registerDroppedPathPreparation', () => {
     ]) {
       expect(() => handler({ sender: webContents }, invalid)).toThrow('Invalid')
     }
-    await expect(handler({ sender: webContents }, request)).resolves.toEqual({
+    await expect(
+      handler({ sender: webContents }, { ...request, consumer: 'local-chat' })
+    ).resolves.toEqual({
       paths: [FINDER],
       failures: []
     })

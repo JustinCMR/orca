@@ -3,8 +3,6 @@ import { measureClipboardTextByteLength } from './clipboard-text'
 export const ORCA_INTERNAL_FILE_DRAG_TYPE = 'text/x-orca-file-path'
 
 export const NATIVE_FILE_DROP_MAX_PATHS = 256
-/** Prefix of the temp folder macOS drag-temp copies land in (`orca-drops-<uid>`). */
-export const DRAG_TEMP_COPY_ROOT_NAME = 'orca-drops'
 export const NATIVE_FILE_DROP_MAX_PATH_BYTES = 256 * 1024
 
 export type NativeFileDropRejectedPayload = {

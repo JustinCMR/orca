@@ -103,7 +103,6 @@ import {
 import { callRuntimeSessionSearch } from '../../ai-vault/runtime-session-search-call'
 import { ensureStructuredAgentSessionHostUnlessRefused } from '../../runtime/structured-agent-session-host-refusal'
 import { getAgentSessionAttachmentStore } from '../../native-chat/agent-session-attachments/agent-session-attachment-store-registry'
-import { registerNativeChatDropCopyKeep } from '../../window/native-chat-drop-copy-keep'
 import type { PluginService } from '../../plugins/plugin-service'
 import type { PluginMarketplaceHandlerServices } from '../plugin-marketplaces'
 import { settleWithinMs } from '../../quit-teardown-deadline'
@@ -282,14 +281,14 @@ export function registerCoreHandlers(
       prepareRuntimeAiVaultSessionResume(app.getPath('userData'), environmentId, args)
   })
   registerNativeChatHandlers()
-  const localChatAttachmentStore = async () => {
-    await ensureStructuredAgentSessionHostUnlessRefused(() =>
-      runtime.ensureStructuredAgentSessionHost()
-    )
-    return getAgentSessionAttachmentStore()
-  }
-  registerClipboardHandlers(store, { localChatAttachmentStore })
-  registerNativeChatDropCopyKeep(localChatAttachmentStore)
+  registerClipboardHandlers(store, {
+    localChatAttachmentStore: async () => {
+      await ensureStructuredAgentSessionHostUnlessRefused(() =>
+        runtime.ensureStructuredAgentSessionHost()
+      )
+      return getAgentSessionAttachmentStore()
+    }
+  })
   registerUpdaterHandlers(store)
   registerSpeechHandlers(store)
 }

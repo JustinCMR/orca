@@ -225,8 +225,6 @@ export const fsApi = {
     args: AgentSessionAttachmentUploadTarget & { paths: string[] }
   ): Promise<AgentSessionAttachmentPathUploadResult> =>
     ipcRenderer.invoke('fs:uploadPathsToAgentSessionAttachments', args),
-  keepDroppedCopiesInLocalChatStore: (paths: string[]): Promise<string[]> =>
-    ipcRenderer.invoke('fs:keepDroppedCopiesInLocalChatStore', paths),
   watchWorktree: (args: { worktreePath: string; connectionId?: string }): Promise<void> =>
     ipcRenderer.invoke('fs:watchWorktree', args),
   unwatchWorktree: (args: { worktreePath: string; connectionId?: string }): Promise<void> =>

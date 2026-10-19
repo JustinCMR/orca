@@ -28,7 +28,7 @@ import { userNamedFileAccess } from '@/lib/local-file-access'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { findTerminalTabWorktreeId } from './native-chat-file-link'
 import { isNativeChatImageAttachmentPath } from './native-chat-image-paste'
-import { keepLocalChatDropCopies } from './native-chat-drop-copy-store'
+import type { CapturedNativeChatDrop } from './native-chat-pane-file-drop'
 
 export type UseNativeChatExternalAttachmentsArgs = {
   terminalTabId: string
@@ -83,7 +83,7 @@ export function useNativeChatExternalAttachments({
   captureExternalDrop: (
     destinationIsCurrent?: () => boolean,
     options?: NativeChatAttachmentFocusOptions
-  ) => (paths: string[]) => Promise<void>
+  ) => CapturedNativeChatDrop
   captureReservedAttachments: (
     destinationIsCurrent?: () => boolean,
     options?: NativeChatAttachmentFocusOptions
@@ -217,12 +217,6 @@ export function useNativeChatExternalAttachments({
             setNotice(nativeChatAttachmentUnreadableNotice())
             return
           }
-          if (owner.kind === 'local' && owner.structuredSessionId) {
-            readable.splice(0, readable.length, ...(await keepLocalChatDropCopies(readable)))
-            if (disabledRef.current || !ownerStillCurrent()) {
-              return
-            }
-          }
           const prepared = pending.splice(0)
           attachResolvedPaths(
             readable.map(({ path }) => path),
@@ -254,7 +248,15 @@ export function useNativeChatExternalAttachments({
           }
         }
       }
-      return { chips, refusal, run }
+      return {
+        chips,
+        refusal,
+        run,
+        preparationConsumer:
+          owner.kind === 'local' && owner.structuredSessionId
+            ? ('local-chat' as const)
+            : ('agent' as const)
+      }
     },
     [attachResolvedPaths, resolveAttachmentOwner, setNotice]
   )
@@ -265,7 +267,7 @@ export function useNativeChatExternalAttachments({
       options?: NativeChatAttachmentFocusOptions
     ) => {
       const intake = captureIntake(destinationIsCurrent, options)
-      return async (paths: string[]): Promise<void> => {
+      const deliver: CapturedNativeChatDrop = async (paths: string[]): Promise<void> => {
         if (paths.length === 0 || disabledRef.current || !mountedRef.current) {
           return
         }
@@ -276,6 +278,8 @@ export function useNativeChatExternalAttachments({
         }
         await intake.run(reserveNativeChatAttachmentChips(intake.chips, paths))
       }
+      deliver.preparationConsumer = intake.preparationConsumer
+      return deliver
     },
     [captureIntake, mountedRef, setNotice]
   )

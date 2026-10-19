@@ -1,3 +1,4 @@
+import type { DroppedPathConsumer } from '../../../../shared/native-file-drop-preparation'
 import { hasWorkspaceFileDragType } from '@/lib/workspace-file-drag'
 import { hasNativeFileDragTypes } from '../../../../shared/native-file-drop'
 
@@ -12,10 +13,14 @@ export type NativeChatPaneDragEvent = {
   relatedTarget: EventTarget | null
 }
 
+export type CapturedNativeChatDrop = ((paths: string[]) => Promise<void>) & {
+  preparationConsumer?: DroppedPathConsumer
+}
+
 /** The composer's drop claim, published while a composer is mounted in the pane. */
 export type NativeChatPaneDropClaim = {
   destinationKey: string
-  captureExternalDrop: () => (paths: string[]) => Promise<void>
+  captureExternalDrop: () => CapturedNativeChatDrop
   /** A guarded composer refuses the drop, so the pane must not invite one. */
   disabled: boolean
   onDragOverCapture: (event: React.DragEvent<HTMLDivElement>) => void

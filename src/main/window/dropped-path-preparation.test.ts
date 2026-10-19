@@ -1,5 +1,8 @@
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { AgentSessionAttachmentStore } from '../native-chat/agent-session-attachments/agent-session-attachment-store'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { DragTempCopyItemResult } from './dragged-temp-file-copy'
 import type * as DragTempFileCopy from './dragged-temp-file-copy'
 import {
@@ -37,9 +40,9 @@ function queue(lane = createDragTempCopyLane(), copyTimeoutMs = 1000) {
     dispose
   }
 }
-function deferred() {
-  let resolve!: (value: DragTempCopyItemResult[]) => void
-  const promise = new Promise<DragTempCopyItemResult[]>((settle) => {
+function deferred<T = DragTempCopyItemResult[]>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
     resolve = settle
   })
   return { promise, resolve }
@@ -51,7 +54,80 @@ beforeEach(() => {
   materialize.mockReset()
 })
 
+async function realDrop() {
+  const root = await mkdtemp(join(tmpdir(), 'orca-30419-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const sourceTempRoot = join(root, 'T')
+  const source = join(sourceTempRoot, 'TemporaryItems', 'NSIRD_test', 'shot.png')
+  await mkdir(join(source, '..'), { recursive: true })
+  await writeFile(source, 'image')
+  const actual = await vi.importActual<typeof DragTempFileCopy>('./dragged-temp-file-copy')
+  materialize.mockImplementation(actual.materializeDragTempPaths)
+  return {
+    source,
+    env: { platform: 'darwin' as const, sourceTempRoot, copyRoot: join(root, 'drops') },
+    store: new AgentSessionAttachmentStore(join(root, 'store'), { hasSession: () => false })
+  }
+}
+
 describe('dropped path preparation through the shared copy queue', () => {
+  it('hands off fresh duplicates, preserves reused copies and abandons late writes without blocking the queue', async () => {
+    const { source, env, store } = await realDrop()
+    const getStore = vi.fn(async (): Promise<AgentSessionAttachmentStore | null> => store)
+    const write = vi.spyOn(store, 'storeFile')
+    const enqueue = createDroppedPathPreparationQueue({
+      platform: 'darwin',
+      copyTimeoutMs: 1000,
+      watchRenderer: () => ({ signal: new AbortController().signal, dispose: vi.fn() }),
+      getCopyEnvironment: async () => env,
+      localChatAttachmentStore: getStore
+    })
+    write.mockRejectedValueOnce(new Error('disk'))
+    const fallback = await enqueue({ paths: [source], consumer: 'local-chat' })
+    const reused = fallback.paths[0]
+    expect(await readFile(reused, 'utf8')).toBe('image')
+    const sibling = join(reused, '..', 'notes.txt')
+    await writeFile(sibling, 'keep')
+    const result = await enqueue({ paths: [source, source, reused], consumer: 'local-chat' })
+    expect(result.paths[0]).toBe(result.paths[1])
+    expect(await readFile(result.paths[0], 'utf8')).toBe('image')
+    expect(result.paths[0].startsWith(store.rootDir)).toBe(true)
+    expect(result.paths[2]).toBe(reused)
+    expect(await readFile(reused, 'utf8')).toBe('image')
+    expect(await readFile(sibling, 'utf8')).toBe('keep')
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(await readdir(env.copyRoot)).toHaveLength(1)
+    getStore.mockResolvedValueOnce(null)
+    const unavailable = await enqueue({ paths: [source], consumer: 'local-chat' })
+    expect(await readFile(unavailable.paths[0], 'utf8')).toBe('image')
+    const started = deferred<void>()
+    const release = deferred<string>()
+    const completed = deferred<string>()
+    onTestFinished(() => release.resolve('abandoned'))
+    write.mockImplementationOnce(async (name, bytes) => {
+      started.resolve()
+      await release.promise
+      const stored = await AgentSessionAttachmentStore.prototype.storeFile.call(store, name, bytes)
+      completed.resolve(stored)
+      return stored
+    })
+    const abandoned = enqueue({ paths: [source], consumer: 'local-chat' })
+    await started.promise
+    const next = enqueue({ paths: [source], consumer: 'agent' })
+    await expect(abandoned).resolves.toMatchObject({
+      paths: [],
+      failures: [{ commonReason: 'timed-out' }]
+    })
+    const following = await next
+    await vi.waitFor(async () => expect(await readdir(env.copyRoot)).toHaveLength(3))
+    expect(await readFile(following.paths[0], 'utf8')).toBe('image')
+    release.resolve('continue')
+    expect(await readFile(await completed.promise, 'utf8')).toBe('image')
+    await settle()
+    await expect(abandoned).resolves.toMatchObject({ paths: [] })
+    expect(await readdir(env.copyRoot)).toHaveLength(3)
+  })
+
   it.each(['agent', 'main-reader'] as const)(
     'passes ordinary paths without copying for %s',
     async (consumer) => {
