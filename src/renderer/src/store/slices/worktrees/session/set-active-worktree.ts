@@ -19,6 +19,7 @@ import { findKnownWorktreeById } from '../listing/detected-worktree-meta'
 import { resolveActivatedWorktreeSurface } from './active-worktree-surface'
 import { clearWorktreeSleepIntent } from '@/lib/worktree-sleep-intent'
 import { withoutSleptChatsForWorkspaces } from '../../../../../../shared/workspace-chat-sleep'
+import { supersedeChatSleepAttempt } from './workspace-chat-sleep-attempt'
 import {
   pendingActivationTerminalPrepCancels,
   shouldDeferActivationTerminalPrep
@@ -175,6 +176,9 @@ export function createSetActiveWorktree(
     // Why: any activation is an explicit wake (null is the sleep flow clearing selection).
     // Cleared after the set() above so a pane still waiting on the marker connects once,
     // in the remounted generation, instead of connecting and then being remounted.
+    if (worktreeId) {
+      supersedeChatSleepAttempt(worktreeId)
+    }
     clearWorktreeSleepIntent(worktreeId)
 
     if (worktreeId && shouldPrepareTerminalTabs) {

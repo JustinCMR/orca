@@ -30,6 +30,7 @@ vi.mock('@/components/terminal-pane/pty-dispatcher', () => ({
 }))
 vi.mock('sonner', () => ({ toast: { error: mocks.toast } }))
 import { runSleepWorktrees } from './sleep-worktree-flow'
+import type { Tab } from '../../../../shared/tab-types'
 
 const ids = ['repo1::/one', 'repo1::/two']
 beforeEach(() => {
@@ -49,7 +50,7 @@ beforeEach(() => {
   mocks.terminal.mockResolvedValue(undefined)
   mocks.suspend.mockResolvedValue(null)
   vi.stubGlobal('window', {
-    api: { ephemeralVm: { suspendWorkspace: mocks.suspend }, pty: { kill: vi.fn() } }
+    api: { ephemeralVm: { suspendWorkspace: mocks.suspend }, pty: { kill: vi.fn() }, gh: {} }
   })
 })
 
@@ -149,4 +150,38 @@ it('keeps the real chat-only twin refusal after synchronous browser cleanup', as
   expect(mocks.chat).not.toHaveBeenCalled()
   expect(mocks.terminal).not.toHaveBeenCalled()
   expect(mocks.toast).toHaveBeenCalledOnce()
+})
+
+it.each([
+  { wake: false, completed: true },
+  { wake: true, completed: false }
+])('an open during Sleep teardown keeps the chat awake: %o', async ({ wake, completed }) => {
+  const chat: Tab = {
+    id: 'chat-tab',
+    entityId: 'chat',
+    groupId: 'g',
+    worktreeId: ids[0],
+    contentType: 'agent-session',
+    agentSessionAgent: 'claude',
+    executionHostId: 'runtime:env-a',
+    label: 'chat',
+    customLabel: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 0
+  }
+  store.setState({ unifiedTabsByWorktree: { [ids[0]]: [chat] } })
+  const terminal = Promise.withResolvers<void>()
+  mocks.terminal.mockReturnValue(terminal.promise)
+  const sleeping = runSleepWorktrees([ids[0]])
+  if (wake) {
+    store.getState().setActiveWorktree(ids[0])
+    store.getState().setActiveWorktree(ids[1])
+    // The terminal reconnect barrier still holds until its teardown settles.
+    expect(hasWorktreeSleepIntent(ids[0])).toBe(true)
+  }
+  terminal.resolve()
+  const results = await sleeping
+  expect(Object.keys(store.getState().explicitlySleptChatsByWorkspace).length).toBe(wake ? 0 : 1)
+  expect(results).toEqual([expect.objectContaining({ stoppedSessionIds: ['chat'], completed })])
 })

@@ -16,6 +16,11 @@ import {
   type WorkspaceChatStopReceipt
 } from './sleep-workspace-chat-stop'
 import { isStructuredTab } from '../../../../shared/structured-agent-session-tab'
+import {
+  beginChatSleepAttempt,
+  endChatSleepAttempt,
+  isCurrentChatSleepAttempt
+} from '@/store/slices/worktrees/session/workspace-chat-sleep-attempt'
 
 /** One per host asked to stop the workspace's chats. */
 export type WorkspaceSleepResult = {
@@ -173,8 +178,20 @@ export async function sleepWorktreesReportingFailures(
   const failedWorktreeIds = new Set<string>()
   // Why apart from failedWorktreeIds: stopped terminals stay stopped when only a chat stop fails.
   const chatFailedIds = new Set<string>()
+  const chatSleepAttempts = new Map<string, symbol>()
+  // Why not the marker alone: it outlives an open during teardown, and that open wakes the chats.
+  const isStillAsleep = (worktreeId: string): boolean => {
+    const attempt = chatSleepAttempts.get(worktreeId)
+    return (
+      hasWorktreeSleepIntent(worktreeId) &&
+      (!attempt || isCurrentChatSleepAttempt(worktreeId, attempt))
+    )
+  }
   const attempts = worktreeIds.map((worktreeId) => {
     markWorktreeSleepIntent(worktreeId)
+    if (options.recordExplicitChatSleep) {
+      chatSleepAttempts.set(worktreeId, beginChatSleepAttempt(worktreeId))
+    }
     const capturedChats = (useAppStore.getState().unifiedTabsByWorktree[worktreeId] ?? []).filter(
       isStructuredTab
     )
@@ -234,12 +251,24 @@ export async function sleepWorktreesReportingFailures(
       results.push(
         ...receipts.map((receipt) => ({ workspaceId: worktreeId, ...receipt, completed: false }))
       )
-      // Why re-read the marker: a wake during the batch keeps the workspace awake.
-      const completed =
-        !failed && !failedWorktreeIds.has(worktreeId) && hasWorktreeSleepIntent(worktreeId)
-      if (options.recordExplicitChatSleep && (completed || failed)) {
+      const completed = !failed && !failedWorktreeIds.has(worktreeId) && isStillAsleep(worktreeId)
+      const attempt = chatSleepAttempts.get(worktreeId)
+      // Why current only: a later open or Sleep owns the saved chats, even after a failed stop.
+      if (attempt && isCurrentChatSleepAttempt(worktreeId, attempt) && (completed || failed)) {
         recordExplicitChatSleep(worktreeId, completed ? receipts : null, capturedChats)
       }
+    }
+    // Why inside try: the finally below releases the attempts this result is judged against.
+    return {
+      failedWorktreeIds: [...new Set([...failedWorktreeIds, ...chatFailedIds])],
+      errors: [...new Set(errors)],
+      results: results.map((result) => ({
+        ...result,
+        completed:
+          !failedWorktreeIds.has(result.workspaceId) &&
+          !chatFailedIds.has(result.workspaceId) &&
+          isStillAsleep(result.workspaceId)
+      }))
     }
   } finally {
     // Why: a failed sleep leaves the workspace awake and retryable.
@@ -249,16 +278,8 @@ export async function sleepWorktreesReportingFailures(
     if (sleptActiveWorktreeId && failedWorktreeIds.has(sleptActiveWorktreeId)) {
       setActiveWorktree(sleptActiveWorktreeId)
     }
-  }
-  return {
-    failedWorktreeIds: [...new Set([...failedWorktreeIds, ...chatFailedIds])],
-    errors: [...new Set(errors)],
-    results: results.map((result) => ({
-      ...result,
-      completed:
-        !failedWorktreeIds.has(result.workspaceId) &&
-        !chatFailedIds.has(result.workspaceId) &&
-        hasWorktreeSleepIntent(result.workspaceId)
-    }))
+    for (const [worktreeId, attempt] of chatSleepAttempts) {
+      endChatSleepAttempt(worktreeId, attempt)
+    }
   }
 }
