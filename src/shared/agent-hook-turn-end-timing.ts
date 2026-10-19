@@ -88,11 +88,14 @@ export function reduceHostTurnEnd(
 ): HostTurnEnd {
   const shown = previous?.payload.state === 'done' ? pickHostTurnEnd(previous) : {}
   const done = event.payload.state === 'done'
-  // Why: a relay, a result retry or a replay already decided this event's end; the host restates it.
+  // Why: a relay, a result retry or a replay already decided this event's end; the host restates it,
+  // except over a done segment it shows with no end of its own (a cancel it inferred), which keeps none.
   if (!canMint || event.isReplay === true || event.turnEndDisposition !== undefined) {
+    const shownWithoutEnd =
+      previous?.payload.state === 'done' && previous.turnEndDisposition === undefined
     return {
       ...(done
-        ? event.turnEndDisposition !== undefined && !endsTurnByCancellation(previous)
+        ? event.turnEndDisposition !== undefined && !shownWithoutEnd
           ? pickHostTurnEnd(event)
           : shown
         : {}),

@@ -198,7 +198,8 @@ describe('the host-stamped turn end', () => {
     const stop = { ...grok, hookEventName: 'stop', payload: { ...working, state: 'done' as const } }
     server.ingestRemote(stop, 'wsl-old')
     expect(row()).not.toHaveProperty('turnEndedAt')
-    server.ingestRemote({ ...stop, turnEndedAt: 42, turnEndDisposition: 'ambiguous' }, 'wsl-old')
+    server.ingestRemote({ ...grok, hookEventName: 'user_prompt_submit', payload: working }, 'wsl')
+    server.ingestRemote({ ...stop, turnEndedAt: 42, turnEndDisposition: 'ambiguous' }, 'wsl')
     expect(row()).toMatchObject({ turnEndedAt: 42, turnEndDisposition: 'ambiguous' })
 
     // The relay never learns a non-Claude cancel inferred here, so its late cancel hook carries an end.
@@ -230,6 +231,26 @@ describe('the host-stamped turn end', () => {
       },
       'wsl'
     )
+    expect(row()).toMatchObject({ state: 'done', stateStartedAt: cancelled?.stateStartedAt })
+    expect(row()).not.toHaveProperty('turnEndedAt')
+
+    // A late plain stop carries no cancel, yet it and every relay restatement of it keep none.
+    const lateStop = {
+      ...stop,
+      turnEndedAt: 50,
+      turnEndDisposition: 'identified' as const,
+      payload: {
+        ...working,
+        state: 'done' as const,
+        mainAgent: { state: 'done' as const, stateStartedAt: 3 }
+      }
+    }
+    server.ingestRemote(lateStop, 'wsl')
+    server.ingestRemote(
+      { ...lateStop, payload: { ...lateStop.payload, lastAssistantMessage: 'Done.' } },
+      'wsl'
+    )
+    server.ingestRemote({ ...lateStop, hookEventName: 'notification' }, 'wsl')
     expect(row()).toMatchObject({ state: 'done', stateStartedAt: cancelled?.stateStartedAt })
     expect(row()).not.toHaveProperty('turnEndedAt')
 
