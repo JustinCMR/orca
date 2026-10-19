@@ -103,7 +103,7 @@ export function startParkedTerminalByteWatcher(
 
   // Why: a BEL OS notification only yields when the pending completion would itself produce an OS notification (live-path parity).
   const hasPendingAgentTaskCompleteNotification = (): boolean =>
-    (agentTaskCompleteTimer !== null || hasPendingHookLaneCompletion(paneKey)) &&
+    agentTaskCompleteTimer !== null &&
     isAgentTaskCompleteOsNotificationEnabled(useAppStore.getState())
 
   const scheduleTerminalBellNotification = (): void => {
@@ -120,6 +120,13 @@ export function startParkedTerminalByteWatcher(
         return
       }
       pendingBellNotification = false
+      // Why: the hook lane's pending Done announces this burst's turn end, superseding the BEL as a pane completion does.
+      if (
+        hasPendingHookLaneCompletion(paneKey) &&
+        isAgentTaskCompleteOsNotificationEnabled(useAppStore.getState())
+      ) {
+        return
+      }
       dispatchTerminalNotification(worktreeId, {
         source: 'terminal-bell',
         paneKey,

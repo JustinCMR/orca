@@ -1,109 +1,182 @@
+import { bindPtyConnectionTestMocks } from './pty-connection-mocks.spec'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setPresenceGated } from '@/hooks/agent-auto-ack-presence'
-import { createAgentCompletionCoordinator } from './agent-completion-coordinator'
-import { useAgentCompletionCoordinatorLifecycle } from './agent-completion-coordinator-test-harness'
-import { dispatchTerminalNotification } from './use-notification-dispatch'
+import { makePaneKey } from '../../../../shared/stable-pane-id'
+import { flushAsyncTicks } from './pty-connection-test-async'
 import {
-  observeAgentHookCompletionForNotification,
-  resetAgentHookCompletionNotificationCoordinators
-} from '@/hooks/agent-hook-completion-notifications'
-import { hookLaneOwnsPaneTurnEnds } from '@/hooks/agent-hook-turn-end-ownership'
+  LEAF_1,
+  createMockTransport,
+  createPane,
+  createManager,
+  type MockTransport
+} from './pty-connection-test-pane-fixtures'
+import { buildPaneConnectionDeps } from './pty-connection-test-deps'
+import { connectMockPanePty } from './pty-connection-test-connect-mock-pane'
+import { createInitialStoreState } from './pty-connection-test-store-fixtures'
+import type { StoreState } from './pty-connection-test-store-state'
+import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinator-types'
 import {
-  PANE_KEY,
-  makeAgentStatus,
-  resetNotificationDispatchMockState,
-  type NotificationDispatchMockState
-} from './notification-dispatch-test-harness'
+  installTerminalTestGlobals,
+  restoreTerminalTestGlobals
+} from './pty-connection-test-environment'
 
-vi.mock('@/store', async () => {
-  const harness = await import('./notification-dispatch-test-harness')
-  return harness.createNotificationDispatchStoreModuleMock()
-})
-
-vi.mock('@/lib/desktop-notification-sound', async () => {
-  const harness = await import('./notification-dispatch-test-harness')
-  return harness.createDesktopNotificationSoundModuleMock()
-})
-
+const PANE_KEY = makePaneKey('tab-1', LEAF_1)
 const SEA = "The sea's waves carry the endless rhythm of tides."
+
+type TimelineEvent =
+  | { at: number; title: string; bell?: true }
+  | { at: number; hook: 'working' | 'done'; message?: string }
 
 // Recorded from Claude Code 2.1.280 over a real PTY (ms from launch): one prompt, then a
 // `/btw` side question 45 s later. The side question spins the title and fires no hook.
-const CAPTURE = [
+// The BEL beside the idle title is the burst agents commonly emit at a turn end.
+const SIDE_QUESTION: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
-  { at: 3_416, hook: 'UserPromptSubmit' },
+  { at: 3_416, hook: 'working' },
   { at: 3_686, title: '◐ Claude Code' },
   { at: 4_647, title: '◑ Claude Code' },
   { at: 7_050, title: '◑ The sea' },
   { at: 7_552, title: '◐ The sea' },
-  { at: 8_447, hook: 'Stop' },
-  { at: 8_760, title: '✳ The sea' },
+  { at: 8_447, hook: 'done', message: SEA },
+  { at: 8_760, title: '✳ The sea', bell: true },
   { at: 53_328, title: '◑ The sea' },
   { at: 54_299, title: '◐ The sea' },
   { at: 55_146, title: '✳ The sea' }
-] as const
+]
 
-let mockState: NotificationDispatchMockState
+// A blocking Stop hook: Stop #1 lands, Claude continues text-only (title keeps spinning, no
+// hook), then Stop #2 re-enters with the final message and the title goes idle ~90 ms later.
+const BLOCKED_STOP: TimelineEvent[] = [
+  { at: 0, title: '✳ Claude Code' },
+  { at: 1_000, hook: 'working' },
+  { at: 1_200, title: '◐ Claude Code' },
+  { at: 5_000, hook: 'done', message: 'Draft answer.' },
+  { at: 6_000, title: '◑ Claude Code' },
+  { at: 12_000, hook: 'done', message: 'Final answer.' },
+  { at: 12_090, title: '✳ Claude Code' }
+]
 
-describe('Claude completion banner', () => {
-  useAgentCompletionCoordinatorLifecycle()
+describe('Claude completion banners through the real pane and hook lanes', () => {
+  let mockStoreState: StoreState
+  let transportQueue: MockTransport[] = []
+  let transportOptions: Record<string, unknown>[] = []
+  let storeSubscribers: ((state: StoreState) => void)[] = []
+  let foreground: string | null = 'claude'
 
-  beforeEach(() => {
-    setPresenceGated(false)
-    mockState = resetNotificationDispatchMockState()
-    resetAgentHookCompletionNotificationCoordinators()
-    delete mockState.agentStatusByPaneKey[PANE_KEY]
-  })
-
-  afterEach(() => {
-    setPresenceGated(true)
-    vi.unstubAllGlobals()
-  })
-
-  it("announces the turn end once with the agent's last message and stays quiet for a /btw side question", () => {
-    // Both real lanes, wired as in the app: hooks feed the hook lane, titles feed the pane lane.
-    const titleLane = createAgentCompletionCoordinator({
-      paneKey: PANE_KEY,
-      getPtyId: () => 'pty-1',
-      inspectProcess: vi.fn(),
-      isLive: () => true,
-      titleCompletionOwnedByHooks: (title) => hookLaneOwnsPaneTurnEnds(PANE_KEY, title),
-      dispatchCompletion: (title) =>
-        dispatchTerminalNotification('wt-primary', {
-          source: 'agent-task-complete',
-          terminalTitle: title,
-          paneKey: PANE_KEY
-        })
+  beforeEach(async () => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    transportQueue = []
+    transportOptions = []
+    storeSubscribers = []
+    foreground = 'claude'
+    mockStoreState = createInitialStoreState(() => mockStoreState)
+    bindPtyConnectionTestMocks({
+      getState: () => mockStoreState,
+      getTransportQueue: () => transportQueue,
+      getTransportOptions: () => transportOptions,
+      getStoreSubscribers: () => storeSubscribers,
+      setStoreSubscribers: (subscribers) => {
+        storeSubscribers = subscribers
+      }
     })
-    let previousAt = 0
-    for (const event of CAPTURE) {
-      vi.advanceTimersByTime(event.at - previousAt)
-      previousAt = event.at
+    await installTerminalTestGlobals()
+    vi.useFakeTimers()
+    vi.mocked(window.api.pty.getForegroundProcess).mockImplementation(async () => foreground)
+    vi.mocked(window.api.pty.hasChildProcesses).mockImplementation(async () => foreground !== null)
+  })
+
+  afterEach(async () => {
+    await restoreTerminalTestGlobals()
+  })
+
+  async function play(timeline: TimelineEvent[]): Promise<void> {
+    const { dispatchTerminalNotification } = await import('./use-notification-dispatch')
+    const { observeAgentHookCompletionForNotification } =
+      await import('@/hooks/agent-hook-completion-notifications')
+    const transport = createMockTransport('tab-pty')
+    transport.connect.mockImplementation(async () => null)
+    transportQueue.push(transport)
+    const deps = buildPaneConnectionDeps(() => mockStoreState, {
+      restoredLeafId: LEAF_1,
+      restoredPtyIdByLeafId: { [LEAF_1]: 'tab-pty' },
+      dispatchNotification: (event: Parameters<typeof dispatchTerminalNotification>[1]) =>
+        dispatchTerminalNotification('wt-1', event)
+    })
+    await connectMockPanePty(createPane(1), createManager(1), deps)
+    await vi.advanceTimersByTimeAsync(20)
+    await flushAsyncTicks(20)
+
+    // Stand in for the transport's title tracker: every title, plus its working/idle edge.
+    const transportHandler = (name: string) => {
+      const handler: unknown = transportOptions[0]?.[name]
+      if (typeof handler !== 'function') {
+        throw new Error(`Expected the pane to register ${name}`)
+      }
+      return handler
+    }
+    let working = false
+    let elapsed = 0
+    let doneStartedAt: number | undefined
+    for (const event of timeline) {
+      await vi.advanceTimersByTimeAsync(event.at - elapsed)
+      elapsed = event.at
       if ('title' in event) {
-        titleLane.observeTitle(event.title)
+        transportHandler('onTitleChange')(event.title, event.title)
+        const nowWorking = !event.title.startsWith('✳')
+        if (nowWorking !== working) {
+          transportHandler(nowWorking ? 'onAgentBecameWorking' : 'onAgentBecameIdle')(event.title)
+        }
+        working = nowWorking
+        if (event.bell) {
+          transportHandler('onBell')()
+        }
         continue
       }
-      const row = makeAgentStatus(PANE_KEY, {
+      // The host pins `stateStartedAt` while the state stays `done`.
+      const stateStartedAt =
+        event.hook === 'done' ? (doneStartedAt ??= Date.now()) : (doneStartedAt = undefined)
+      const payload: AgentCompletionStatusSnapshot = {
+        state: event.hook,
+        prompt: 'Reply with one short sentence.',
         agentType: 'claude',
-        prompt: 'Reply with one short sentence about the sea.',
-        ...(event.hook === 'Stop'
-          ? { state: 'done', lastAssistantMessage: SEA }
-          : { state: 'working', lastAssistantMessage: undefined })
-      })
-      mockState.agentStatusByPaneKey[PANE_KEY] = row
-      observeAgentHookCompletionForNotification({
+        ...(event.message ? { lastAssistantMessage: event.message } : {}),
+        stateStartedAt: stateStartedAt ?? Date.now()
+      }
+      mockStoreState.agentStatusByPaneKey[PANE_KEY] = {
+        ...payload,
         paneKey: PANE_KEY,
-        worktreeId: 'wt-primary',
-        payload: row
-      })
+        updatedAt: Date.now(),
+        stateHistory: []
+      }
+      observeAgentHookCompletionForNotification({ paneKey: PANE_KEY, worktreeId: 'wt-1', payload })
     }
-    vi.advanceTimersByTime(5_000)
+    await vi.advanceTimersByTimeAsync(5_000)
+  }
 
-    expect(window.api.notifications.dispatch).toHaveBeenCalledTimes(1)
-    expect(window.api.notifications.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ agentType: 'claude', agentLastAssistantMessage: SEA })
+  const banners = () =>
+    vi.mocked(window.api.notifications.dispatch).mock.calls.map(([request]) => request)
+
+  it('announces the turn once with its last message; a /btw, its BEL and quitting stay quiet', async () => {
+    await play(SIDE_QUESTION)
+    foreground = null
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(banners()).toEqual([
+      expect.objectContaining({
+        source: 'agent-task-complete',
+        agentType: 'claude',
+        agentLastAssistantMessage: SEA
+      })
+    ])
+    expect(mockStoreState.markAgentAttentionUnread).toHaveBeenCalledTimes(1)
+  })
+
+  it('announces the final message when a blocking Stop hook makes Claude continue', async () => {
+    await play(BLOCKED_STOP)
+
+    expect(banners().at(-1)).toEqual(
+      expect.objectContaining({ agentLastAssistantMessage: 'Final answer.' })
     )
-    expect(mockState.markAgentAttentionUnread).toHaveBeenCalledTimes(1)
-    titleLane.dispose()
+    expect(banners().every((banner) => banner.source === 'agent-task-complete')).toBe(true)
   })
 })

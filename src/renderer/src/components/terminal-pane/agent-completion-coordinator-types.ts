@@ -69,6 +69,8 @@ export type AgentCompletionCoordinator = {
   /** Another reader saw this agent in the foreground; lets the monitor confirm its exit. */
   observeForegroundAgentProcess: (process: RecognizedAgentProcess) => void
   hasPendingHookDoneCompletion: () => boolean
+  /** Whether a turn end observed now could be announced (live, with agent evidence, not re-arming). */
+  canAnnounceCompletion: () => boolean
   resetCompletionState: (options?: { requireFreshWorking?: boolean }) => void
   dispose: () => void
 }

@@ -240,6 +240,13 @@ export function installPanePtyVisibilityBind(session: ConnectPanePtySession): vo
         return
       }
       session.pendingTerminalBellNotification = false
+      // Why: the hook lane's pending Done announces this burst's turn end, superseding the BEL as a pane completion does.
+      if (
+        isAgentTaskCompleteNotificationEnabled() &&
+        hasPendingHookLaneCompletion(session.cacheKey)
+      ) {
+        return
+      }
       session.deps.dispatchNotification({
         source: 'terminal-bell',
         paneKey: session.cacheKey,
@@ -252,7 +259,6 @@ export function installPanePtyVisibilityBind(session: ConnectPanePtySession): vo
   session.hasPendingAgentTaskCompleteNotification = (): boolean =>
     isAgentTaskCompleteNotificationEnabled() &&
     (session.agentCompletionCoordinator.hasPendingHookDoneCompletion() ||
-      hasPendingHookLaneCompletion(session.cacheKey) ||
       session.agentTaskCompleteNotificationGraceTimer !== null ||
       session.agentTaskCompleteNotificationMaxTimer !== null ||
       session.agentTaskCompleteStatusUnsubscribe !== null)

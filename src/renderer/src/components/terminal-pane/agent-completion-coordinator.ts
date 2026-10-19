@@ -247,8 +247,10 @@ export function createAgentCompletionCoordinator(
   }
 
   function claimTitleCompletion(title: string): boolean {
-    // Why: checked before claiming, since a title claim would swallow the hook lane's Done for this turn.
+    // Why: the hook lane announces this turn end, so settle the turn here without the claim that would swallow its Done.
     if (options.titleCompletionOwnedByHooks?.(title) === true) {
+      completionState.lastCompletedTurn = completionState.currentTurn
+      completionState.workingStatusObserved = false
       return false
     }
     completionState.lastCompletionIdentity = {
@@ -317,6 +319,7 @@ export function createAgentCompletionCoordinator(
     startProcessTracking: () => processMonitor.start(),
     observeForegroundAgentProcess: processMonitor.observeRecognizedProcess,
     hasPendingHookDoneCompletion: lifecycle.hasPendingHookDoneCompletion,
+    canAnnounceCompletion: notification.canAnnounceCompletion,
     resetCompletionState: lifecycle.resetCompletionState,
     dispose: lifecycle.dispose
   }

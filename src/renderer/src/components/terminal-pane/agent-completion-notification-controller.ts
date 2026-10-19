@@ -78,7 +78,11 @@ export function createAgentCompletionNotificationController({
     if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
       return null
     }
-    return completionIdentityFor(payload.state, payload.agentType, timestamp)
+    const identity = completionIdentityFor(payload.state, payload.agentType, timestamp)
+    // Why: a Stop re-entered after a blocking Stop hook keeps the pinned stamp; its new final message makes it a new turn end.
+    return payload.state === 'done' && payload.lastAssistantMessage
+      ? `${identity}:${payload.lastAssistantMessage}`
+      : identity
   }
 
   function hookCompletionAgentIdentity(payload: AgentCompletionStatusSnapshot): string | null {
@@ -141,6 +145,10 @@ export function createAgentCompletionNotificationController({
     )
   }
 
+  function canAnnounceCompletion(): boolean {
+    return !state.requiresFreshWorking && options.isLive() && processState.hasAgentRunEvidence
+  }
+
   function dispatchCompletion(
     source: CompletionSource,
     title: string,
@@ -156,10 +164,7 @@ export function createAgentCompletionNotificationController({
     if (source !== 'hook' && state.pendingHookDoneTimer !== null) {
       return false
     }
-    if (state.requiresFreshWorking || state.lastCompletedTurn === state.currentTurn) {
-      return false
-    }
-    if (!options.isLive() || !processState.hasAgentRunEvidence) {
+    if (!canAnnounceCompletion() || state.lastCompletedTurn === state.currentTurn) {
       return false
     }
     const now = Date.now()
@@ -203,8 +208,8 @@ export function createAgentCompletionNotificationController({
         ...(optionsOverride.terminalIdleConfirmed === true ? { terminalIdleConfirmed: true } : {}),
         ...(optionsOverride.agentStatus ? { agentStatus: optionsOverride.agentStatus } : {})
       })
-    } else if (optionsOverride.notifyWithoutLifecycle === true && optionsOverride.agentStatus) {
-      // Why: the pane is still `working`; the synthetic done must carry its own snapshot or the notification would read the pinned working row.
+    } else if (optionsOverride.agentStatus) {
+      // Why: carry the hook's own snapshot; the stored row may be a newer state (a pinned `working`) or too old to lend content.
       options.dispatchCompletion(title, {
         source,
         quietedHookDone: false,
@@ -283,6 +288,7 @@ export function createAgentCompletionNotificationController({
     dispatchCompletion,
     dispatchAttention,
     scheduleHookDoneCompletion,
-    hasPendingHookDone: () => state.pendingHookDoneTimer !== null
+    hasPendingHookDone: () => state.pendingHookDoneTimer !== null,
+    canAnnounceCompletion
   }
 }
