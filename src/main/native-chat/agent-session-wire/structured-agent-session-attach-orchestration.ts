@@ -270,8 +270,7 @@ async function runAttachUnderAbort(
             sessionId,
             attached.journal,
             fence,
-            context.deps.adapter,
-            context.now
+            context.deps.adapter
           )
         }
         if (fenceBefore !== null && fence !== fenceBefore) {
