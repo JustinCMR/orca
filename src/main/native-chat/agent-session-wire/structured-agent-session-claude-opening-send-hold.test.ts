@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { agentJournalSubmissionKey } from '../../../shared/agent-session-journal-item-key'
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
+import { agentSessionSendSubmission } from '../../../shared/agent-session-wire'
 import { projectStructuredAgentSessionMessages } from '../../../shared/structured-agent-session-message-projection'
 import { projectNativeChatTranscriptMessages } from '../../../shared/native-chat-transcript-projection'
 import { nativeChatRowsInDrawOrder } from '../../../shared/native-chat-turn-grouping'
@@ -169,7 +170,7 @@ it('reads a send as accepted across its echo, never in doubt, so a worker start 
     isReplay: true,
     parent_tool_use_id: null
   })
-  expect((await answer)?.value.submission?.dispatchState).toBe('accepted')
+  expect(agentSessionSendSubmission((await answer)?.value)?.dispatchState).toBe('accepted')
 })
 
 it('holds a follow-up until the echo opens the turn, then folds it in, drawn inside that turn', async () => {
