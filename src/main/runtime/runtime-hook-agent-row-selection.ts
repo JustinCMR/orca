@@ -18,6 +18,7 @@ export type RuntimeAgentRowSnapshot = {
   connectionId: string | null
   payload: ParsedAgentStatusPayload
   stateStartedAt: number
+  turnEndedAt?: number
   updatedAt: number
   evidenceObservedAt?: number
   providerSession?: AgentProviderSessionMetadata
@@ -134,6 +135,7 @@ export function selectFreshAgentRowForMobileTab(args: {
     ...(match.tabId ? { tabId: match.tabId } : {}),
     payload: pickParsedAgentStatusPayload(match),
     stateStartedAt: match.stateStartedAt ?? match.receivedAt,
+    ...(match.turnEndedAt !== undefined ? { turnEndedAt: match.turnEndedAt } : {}),
     updatedAt: match.receivedAt,
     ...(match.providerSession ? { providerSession: match.providerSession } : {}),
     ...(match.programStatus ? { programStatus: match.programStatus } : {}),

@@ -35,6 +35,7 @@ export function applyWebSessionTabsStorePatch(
     seedOnly?: true
     payload: ReturnType<typeof pickParsedAgentStatusPayload> & {
       stateStartedAt: number
+      turnEndedAt?: number
       localStateStartedAt?: number
     }
   }[] = []
@@ -135,7 +136,8 @@ export function applyWebSessionTabsStorePatch(
                 {
                   isReplay: true,
                   stateStartedAt: notificationStatus.stateStartedAt,
-                  turnCompletedAt
+                  turnCompletedAt,
+                  turnEndedAt: notificationStatus.turnEndedAt
                 },
                 notificationStatus.state,
                 state.agentStatusByPaneKey[notificationStatus.paneKey]
@@ -153,6 +155,9 @@ export function applyWebSessionTabsStorePatch(
                 ...(turnCompletedAt !== undefined ? { turnCompletedAt } : {})
               }),
               stateStartedAt: notificationStatus.stateStartedAt,
+              ...(notificationStatus.turnEndedAt !== undefined
+                ? { turnEndedAt: notificationStatus.turnEndedAt }
+                : {}),
               ...(clientOwnedNotification ? { localStateStartedAt } : {})
             }
           })

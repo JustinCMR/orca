@@ -4,6 +4,8 @@ import type { RuntimeTerminalProcessInspection } from '@/runtime/runtime-termina
 
 export type AgentCompletionStatusSnapshot = ParsedAgentStatusPayload & {
   stateStartedAt?: number
+  /** The host's stamp for the turn end this `done` reports; restatements keep it. */
+  turnEndedAt?: number
   /** Renderer-local boundary used only to reject a delayed cross-host completion. */
   localStateStartedAt?: number
 }

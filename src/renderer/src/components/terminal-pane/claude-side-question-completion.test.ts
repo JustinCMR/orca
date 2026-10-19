@@ -24,7 +24,7 @@ const SEA = "The sea's waves carry the endless rhythm of tides."
 
 type TimelineEvent =
   | { at: number; title: string; bell?: true }
-  | { at: number; hook: 'working' | 'done'; message?: string }
+  | { at: number; hook: 'working' | 'done'; message?: string; restated?: true }
 
 // Recorded from Claude Code 2.1.280 over a real PTY (ms from launch): one prompt, then a
 // `/btw` side question 45 s later. The side question spins the title and fires no hook.
@@ -45,6 +45,7 @@ const SIDE_QUESTION: TimelineEvent[] = [
 
 // A blocking Stop hook: Stop #1 lands, Claude continues text-only (title keeps spinning, no
 // hook), then Stop #2 re-enters with the final message and the title goes idle ~90 ms later.
+// A minute on, a session reset clears the message cache and an idle reminder restates the turn.
 const BLOCKED_STOP: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
   { at: 1_000, hook: 'working' },
@@ -52,7 +53,8 @@ const BLOCKED_STOP: TimelineEvent[] = [
   { at: 5_000, hook: 'done', message: 'Draft answer.' },
   { at: 6_000, title: '◑ Claude Code' },
   { at: 12_000, hook: 'done', message: 'Final answer.' },
-  { at: 12_090, title: '✳ Claude Code' }
+  { at: 12_090, title: '✳ Claude Code' },
+  { at: 72_000, hook: 'done', restated: true }
 ]
 
 describe('Claude completion banners through the real pane and hook lanes', () => {
@@ -89,7 +91,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     await restoreTerminalTestGlobals()
   })
 
-  async function play(timeline: TimelineEvent[]): Promise<void> {
+  async function play(timeline: TimelineEvent[], servedBy?: string): Promise<void> {
     const { dispatchTerminalNotification } = await import('./use-notification-dispatch')
     const { observeAgentHookCompletionForNotification } =
       await import('@/hooks/agent-hook-completion-notifications')
@@ -105,6 +107,13 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     await connectMockPanePty(createPane(1), createManager(1), deps)
     await vi.advanceTimersByTimeAsync(20)
     await flushAsyncTicks(20)
+    if (servedBy) {
+      // A pane of a paired server that predates the turn-end stamp (it advertises no capability).
+      const ptyId = `remote:${servedBy}@@pty-1`
+      mockStoreState.ptyIdsByTabId['tab-1'] = [ptyId]
+      mockStoreState.terminalLayoutsByTabId['tab-1'].ptyIdsByLeafId = { [LEAF_1]: ptyId }
+      mockStoreState.runtimeStatusByEnvironmentId.set(servedBy, { status: { capabilities: [] } })
+    }
 
     // Stand in for the transport's title tracker: every title, plus its working/idle edge.
     const transportHandler = (name: string) => {
@@ -117,6 +126,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     let working = false
     let elapsed = 0
     let doneStartedAt: number | undefined
+    let turnEndedAt: number | undefined
     for (const event of timeline) {
       await vi.advanceTimersByTimeAsync(event.at - elapsed)
       elapsed = event.at
@@ -132,15 +142,17 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
         }
         continue
       }
-      // The host pins `stateStartedAt` while the state stays `done`.
+      // The host pins `stateStartedAt` while the state stays `done`, and stamps each real Stop.
       const stateStartedAt =
         event.hook === 'done' ? (doneStartedAt ??= Date.now()) : (doneStartedAt = undefined)
+      turnEndedAt = event.hook !== 'done' ? undefined : event.restated ? turnEndedAt : Date.now()
       const payload: AgentCompletionStatusSnapshot = {
         state: event.hook,
         prompt: 'Reply with one short sentence.',
         agentType: 'claude',
         ...(event.message ? { lastAssistantMessage: event.message } : {}),
-        stateStartedAt: stateStartedAt ?? Date.now()
+        stateStartedAt: stateStartedAt ?? Date.now(),
+        ...(turnEndedAt !== undefined ? { turnEndedAt } : {})
       }
       mockStoreState.agentStatusByPaneKey[PANE_KEY] = {
         ...payload,
@@ -171,12 +183,27 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     expect(mockStoreState.markAgentAttentionUnread).toHaveBeenCalledTimes(1)
   })
 
-  it('announces the final message when a blocking Stop hook makes Claude continue', async () => {
-    await play(BLOCKED_STOP)
+  it('keeps the title banner for a /btw on a pane whose paired server predates the stamp', async () => {
+    await play(SIDE_QUESTION, 'old-server')
 
     expect(banners().at(-1)).toEqual(
-      expect.objectContaining({ agentLastAssistantMessage: 'Final answer.' })
+      expect.objectContaining({ source: 'agent-task-complete', terminalTitle: '✳ The sea' })
     )
-    expect(banners().every((banner) => banner.source === 'agent-task-complete')).toBe(true)
+    expect(banners().at(-1)).not.toHaveProperty('agentLastAssistantMessage')
+  })
+
+  it('announces each Stop of a blocking Stop hook turn once, and not its later restatement', async () => {
+    await play(BLOCKED_STOP)
+
+    expect(banners()).toEqual([
+      expect.objectContaining({
+        source: 'agent-task-complete',
+        agentLastAssistantMessage: 'Draft answer.'
+      }),
+      expect.objectContaining({
+        source: 'agent-task-complete',
+        agentLastAssistantMessage: 'Final answer.'
+      })
+    ])
   })
 })

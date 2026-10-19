@@ -329,6 +329,7 @@ export function normalizeHookPayload(
       : {}),
     ...(providerSession ? { providerSession } : {}),
     ...(providerSessionOnly ? { providerSessionOnly: true } : {}),
+    ...(hookPayloadRecord.stop_hook_active === true ? { stopHookActive: true } : {}),
     payload: transportPayload
   }
 }

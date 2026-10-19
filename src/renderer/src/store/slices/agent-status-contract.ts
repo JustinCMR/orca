@@ -95,6 +95,8 @@ export type AgentStatusTiming = {
   stateStartedAt?: number
   /** The host's turn start; see `AgentStatusEntry.turnStartedAt`. */
   turnStartedAt?: number
+  /** The host's turn end; see `AgentStatusEntry.turnEndedAt`. */
+  turnEndedAt?: number
 }
 
 export type AgentStatusRouting = {

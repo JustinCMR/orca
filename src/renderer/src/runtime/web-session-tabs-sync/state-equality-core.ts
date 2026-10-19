@@ -50,6 +50,7 @@ export function agentStatusEntryEqual(
     a.updatedAt === b.updatedAt &&
     a.stateStartedAt === b.stateStartedAt &&
     a.turnStartedAt === b.turnStartedAt &&
+    a.turnEndedAt === b.turnEndedAt &&
     a.agentType === b.agentType &&
     a.paneKey === b.paneKey &&
     a.worktreeId === b.worktreeId &&

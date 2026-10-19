@@ -240,7 +240,8 @@ export function createAgentStatusEventApplicator(args: {
           ? { evidenceObservedAt: data.evidenceObservedAt }
           : {}),
         stateStartedAt: data.stateStartedAt,
-        ...(Number.isFinite(data.turnStartedAt) ? { turnStartedAt: data.turnStartedAt } : {})
+        ...(Number.isFinite(data.turnStartedAt) ? { turnStartedAt: data.turnStartedAt } : {}),
+        ...(Number.isFinite(data.turnEndedAt) ? { turnEndedAt: data.turnEndedAt } : {})
       },
       routing: {
         tabId: ownerTabId,
@@ -255,10 +256,11 @@ export function createAgentStatusEventApplicator(args: {
       options?.replay === true || isSeenHostReplay(data, resolvedPayload.state, existingStatus)
     const applyPostCommitNotification = (): void => {
       if (statusWorktreeId && (!replayed || resolvedPayload.state === 'working')) {
-        const notificationPayload =
-          typeof data.stateStartedAt === 'number'
-            ? { ...resolvedPayload, stateStartedAt: data.stateStartedAt }
-            : resolvedPayload
+        const notificationPayload = {
+          ...resolvedPayload,
+          stateStartedAt: data.stateStartedAt,
+          turnEndedAt: data.turnEndedAt
+        }
         observeAgentHookCompletionForNotification({
           paneKey,
           worktreeId: statusWorktreeId,

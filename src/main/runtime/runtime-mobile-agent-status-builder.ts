@@ -110,6 +110,7 @@ export function buildRuntimeMobileAgentStatus(
           ? { evidenceObservedAt: liveRow.evidenceObservedAt }
           : {}),
         stateStartedAt: liveRow.stateStartedAt,
+        ...(liveRow.turnEndedAt !== undefined ? { turnEndedAt: liveRow.turnEndedAt } : {}),
         stateHistory: [],
         ...(terminalHandle ? { terminalHandle } : {}),
         ...((pty?.worktreeId ?? liveRow.worktreeId)

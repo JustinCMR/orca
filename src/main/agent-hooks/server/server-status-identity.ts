@@ -61,6 +61,7 @@ export function toAgentStatusIpcPayload(
       : {}),
     stateStartedAt: entry.stateStartedAt,
     ...(entry.turnStartedAt !== undefined ? { turnStartedAt: entry.turnStartedAt } : {}),
+    ...(entry.turnEndedAt !== undefined ? { turnEndedAt: entry.turnEndedAt } : {}),
     ...(entry.providerSession ? { providerSession: entry.providerSession } : {}),
     ...(entry.providerSessionOnly ? { providerSessionOnly: true } : {}),
     ...(entry.promptInteractionKey ? { promptInteractionKey: entry.promptInteractionKey } : {}),

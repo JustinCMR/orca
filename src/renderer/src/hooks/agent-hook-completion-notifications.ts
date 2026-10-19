@@ -140,7 +140,7 @@ export function syncAgentHookCompletionNotificationsForStoreUpdate(
   return true
 }
 
-function getPtyIdForPaneKey(paneKey: string): string | null {
+export function getPtyIdForPaneKey(paneKey: string): string | null {
   const parsed = parsePaneKey(paneKey)
   if (!parsed) {
     return null

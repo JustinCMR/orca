@@ -99,6 +99,8 @@ export type AgentStatusEntry = {
   /** When the main agent's current turn began, as the hook server stamped it. Absent from old hosts
    *  and writers without a turn clock; readers fall back to `stateStartedAt`. */
   turnStartedAt?: number
+  /** The host's turn-end stamp; see `AgentStatusIpcPayload.turnEndedAt`. */
+  turnEndedAt?: number
   agentType?: AgentType
   /** Provider model currently used by this session. */
   model?: string

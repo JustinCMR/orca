@@ -240,6 +240,7 @@ export class AgentHookResultRetryScheduler {
       )
       return
     }
-    this.host.applyEvent(event, source, env, version)
+    // Why: the retry only adds text to the same turn end, so it restates that end instead of minting one.
+    this.host.applyEvent({ ...event, turnEndedAt: current.turnEndedAt }, source, env, version)
   }
 }

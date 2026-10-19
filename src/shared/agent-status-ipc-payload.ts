@@ -60,6 +60,9 @@ export type AgentStatusIpcPayload = ParsedAgentStatusPayload & {
    *  own turn-opening event. Optional: old hosts and turns opened unseen omit it, and readers fall
    *  back to `stateStartedAt`. */
   turnStartedAt?: number
+  /** When the main agent's latest turn ended, stamped by the execution host from the agent's own
+   *  turn-end event and kept through restatements. Absent from old hosts and unclassified agents. */
+  turnEndedAt?: number
   orchestration?: AgentStatusOrchestrationContext
   providerSession?: AgentProviderSessionMetadata
   /** Resume identity update only; the status-shaped fields are transport placeholders. */

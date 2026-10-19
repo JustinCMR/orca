@@ -279,6 +279,11 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       providerSession,
       providerSessionOnly: envelope.providerSessionOnly === true ? true : undefined,
       isReplay: envelope.isReplay === true ? true : undefined,
+      ...(typeof envelope.turnEndedAt === 'number' &&
+      Number.isFinite(envelope.turnEndedAt) &&
+      envelope.turnEndedAt > 0
+        ? { turnEndedAt: envelope.turnEndedAt }
+        : {}),
       claudeRunningNonAgentTask:
         typeof envelope.claudeRunningNonAgentTask === 'boolean'
           ? envelope.claudeRunningNonAgentTask

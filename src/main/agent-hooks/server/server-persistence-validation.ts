@@ -151,6 +151,7 @@ export function sanitizeHydratedEntry(
       ? record.compactTrigger
       : undefined
   const turnStartedAt = record.turnStartedAt
+  const turnEndedAt = record.turnEndedAt
   return {
     paneKey,
     agentPresence: readAgentProcessPresence(record.agentPresence),
@@ -176,6 +177,9 @@ export function sanitizeHydratedEntry(
     stateStartedAt,
     ...(typeof turnStartedAt === 'number' && Number.isFinite(turnStartedAt) && turnStartedAt > 0
       ? { turnStartedAt }
+      : {}),
+    ...(typeof turnEndedAt === 'number' && Number.isFinite(turnEndedAt) && turnEndedAt > 0
+      ? { turnEndedAt }
       : {})
   }
 }

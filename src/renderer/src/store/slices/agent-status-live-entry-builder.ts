@@ -127,6 +127,9 @@ export function buildAgentStatusLiveEntry(
   const turnStartedAt =
     timing?.turnStartedAt ??
     (existing && existing.state === payload.state ? existing.turnStartedAt : undefined)
+  const turnEndedAt =
+    timing?.turnEndedAt ??
+    (existing && existing.state === payload.state ? existing.turnEndedAt : undefined)
   if (
     existing &&
     shouldSuppressInheritedTerminalStatus({
@@ -216,6 +219,7 @@ export function buildAgentStatusLiveEntry(
     stateStartedAt,
     stateObservedAt,
     ...(turnStartedAt !== undefined ? { turnStartedAt } : {}),
+    ...(turnEndedAt !== undefined ? { turnEndedAt } : {}),
     agentType: identity.agentType,
     model:
       payload.model ?? (existing?.agentType === identity.agentType ? existing.model : undefined),

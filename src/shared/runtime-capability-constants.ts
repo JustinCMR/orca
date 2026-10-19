@@ -54,6 +54,9 @@ export const TERMINAL_PROMPT_DELIVERY_RUNTIME_CAPABILITY = 'terminal.prompt-deli
 // Why: paired clients may unmount xterm only when the host can return a
 // bounded, sequenced scrollback snapshot for lossless reveal.
 export const TERMINAL_PAIRED_PARKING_RUNTIME_CAPABILITY = 'terminal.paired-parking.v1' as const
+// Why: a host without it can't mark a Stop re-entered after a blocking Stop hook, so clients keep
+// the terminal-title completion fallback for its panes.
+export const AGENT_STATUS_TURN_END_RUNTIME_CAPABILITY = 'agent-status.turn-ended-at.v1' as const
 // Why: terminal.ensureAgentSession params are strict, so an older host rejects `spawnIntent`; a
 // host that advertises this also may answer a declared restore with `terminal_spawn_deferred`.
 export const TERMINAL_SPAWN_INTENT_RUNTIME_CAPABILITY = 'terminal.spawn-intent.v1' as const

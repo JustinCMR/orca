@@ -40,6 +40,7 @@ export function buildRelayHookEnvelope(
     ...(event.providerSession ? { providerSession: event.providerSession } : {}),
     ...(event.providerSessionOnly ? { providerSessionOnly: true } : {}),
     isReplay: options.isReplay === true ? true : undefined,
+    ...(event.turnEndedAt !== undefined ? { turnEndedAt: event.turnEndedAt } : {}),
     env,
     version,
     payload: event.payload

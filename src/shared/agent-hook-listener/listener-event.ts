@@ -48,6 +48,12 @@ export type AgentHookEventPayload = {
   providerSessionOnly?: boolean
   /** True when this event is a relay cache replay rather than a live hook. */
   isReplay?: boolean
+  /** When the main agent's latest turn ended, minted only by the execution host's turn-end
+   *  derivation (agent-hook-turn-end-timing.ts); a relay forwards it and a result retry restates it. */
+  turnEndedAt?: number
+  /** The agent's turn-end event re-entered after a blocking Stop hook (`stop_hook_active`).
+   *  In-process only: the host reads it while minting `turnEndedAt`; never stored or sent. */
+  stopHookActive?: true
   /** Claude live work the child list does not show (a shell, a cron, an owed task notification); rejects false input-based interrupts. */
   claudeRunningNonAgentTask?: boolean
   /** Row projected from a structured session the host holds: `owned` while its provider child
