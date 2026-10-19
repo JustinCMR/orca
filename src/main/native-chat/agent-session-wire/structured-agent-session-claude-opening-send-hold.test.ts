@@ -158,6 +158,20 @@ async function drawn(): Promise<{ text: string; turn: string | undefined }[]> {
   return [...nativeChatRowsInDrawOrder(keyed, drawOrder)]
 }
 
+it('reads a send as accepted across its echo, never in doubt, so a worker start keeps its worker', async () => {
+  const connection = claude.connections[0]!
+  const first = await send('FIRST prompt')
+  await eventually(() => expect(written(connection, 'FIRST prompt')).toBeDefined())
+  // What `orchestration worker-start` waits on; a doubt here closed the new worker (STA-11160).
+  const answer = host.waitForSendSettlement(SESSION, first, { budgetMs: 5_000 })
+  frame(connection, {
+    ...written(connection, 'FIRST prompt')!,
+    isReplay: true,
+    parent_tool_use_id: null
+  })
+  expect((await answer)?.value.submission?.dispatchState).toBe('accepted')
+})
+
 it('holds a follow-up until the echo opens the turn, then folds it in, drawn inside that turn', async () => {
   const connection = claude.connections[0]!
   const first = await send('FIRST prompt')
