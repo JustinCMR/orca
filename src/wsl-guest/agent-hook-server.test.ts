@@ -583,16 +583,15 @@ describe('RelayAgentHookServer', () => {
       expect(forward.mock.calls.at(-1)?.[0].payload.lastAssistantMessage).toBe(
         'Relay transcript completed.'
       )
-      // The relay marks the Stop's end once; SessionEnd and the result retry restate it.
-      const ends = forward.mock.calls.map(([envelope]) => envelope.turnEndedAt)
-      expect(ends[0]).toEqual(expect.any(Number))
-      expect(new Set(ends)).toEqual(new Set([ends[0]]))
+      // A Stop whose opening the relay never saw is ambiguous; SessionEnd and the retry keep that.
+      const ends = forward.mock.calls.map(([env]) => `${env.turnEndedAt}:${env.turnEndDisposition}`)
+      expect(new Set(ends)).toEqual(new Set(['undefined:ambiguous']))
     } finally {
       server.stop()
     }
   })
 
-  it('marks a verified re-entered Stop as a later end and replays the cached end unchanged', async () => {
+  it('marks a verified re-entered Stop as a later end, an unproven repeat ambiguous, and replays both unchanged', async () => {
     const forward = vi.fn<(envelope: AgentHookRelayEnvelope) => void>()
     const server = new RelayAgentHookServer({ endpointDir: dir, forward })
     await server.start()
@@ -621,9 +620,12 @@ describe('RelayAgentHookServer', () => {
       })
       const [draft, final] = forward.mock.calls.slice(-2).map(([env]) => env.turnEndedAt)
       expect(final).toBeGreaterThan(draft!)
+      await post({ hook_event_name: 'Stop', last_assistant_message: 'Final.' })
+      const repeat = { turnEndedAt: final, turnEndDisposition: 'ambiguous' }
+      expect(forward.mock.calls.at(-1)?.[0]).toMatchObject(repeat)
 
       expect(server.replayCachedPayloadsForPanes()).toBe(1)
-      expect(forward.mock.calls.at(-1)?.[0]).toMatchObject({ isReplay: true, turnEndedAt: final })
+      expect(forward.mock.calls.at(-1)?.[0]).toMatchObject({ isReplay: true, ...repeat })
       expect(forward.mock.calls.at(-1)?.[0]).not.toHaveProperty('hostTurn')
     } finally {
       server.stop()

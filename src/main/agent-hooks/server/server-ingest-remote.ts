@@ -1,7 +1,11 @@
 import { normalizeHostTurnRevision } from '../../../shared/agent-hook-interrupt-reconciliation'
 import { readAgentProcessPresence } from '../../../shared/agent-process-presence'
 import { track } from '../../telemetry/client'
-import { normalizeAgentStatusPayload } from '../../../shared/agent-status-types'
+import {
+  isTurnEndDisposition,
+  normalizeAgentStatusPayload
+} from '../../../shared/agent-status-types'
+import { isTurnEndedAt } from '../../../shared/agent-hook-turn-end-timing'
 import { restoreShedStatusFields } from '../../../shared/agent-hook-relay'
 import {
   MAX_PANE_KEY_LEN,
@@ -279,10 +283,9 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestS
       providerSession,
       providerSessionOnly: envelope.providerSessionOnly === true ? true : undefined,
       isReplay: envelope.isReplay === true ? true : undefined,
-      ...(typeof envelope.turnEndedAt === 'number' &&
-      Number.isFinite(envelope.turnEndedAt) &&
-      envelope.turnEndedAt > 0
-        ? { turnEndedAt: envelope.turnEndedAt }
+      ...(isTurnEndedAt(envelope.turnEndedAt) ? { turnEndedAt: envelope.turnEndedAt } : {}),
+      ...(isTurnEndDisposition(envelope.turnEndDisposition)
+        ? { turnEndDisposition: envelope.turnEndDisposition }
         : {}),
       claudeRunningNonAgentTask:
         typeof envelope.claudeRunningNonAgentTask === 'boolean'

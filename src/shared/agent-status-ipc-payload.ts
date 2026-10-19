@@ -14,7 +14,8 @@ import type {
 } from './agent-status-run'
 import type {
   AgentStatusOrchestrationContext,
-  ParsedAgentStatusPayload
+  ParsedAgentStatusPayload,
+  TurnEndDisposition
 } from './agent-status-types'
 
 /** A PTY the pane-key migration could not move, reported for operator triage. */
@@ -63,6 +64,8 @@ export type AgentStatusIpcPayload = ParsedAgentStatusPayload & {
   /** When the main agent's latest turn ended, stamped by the execution host from the agent's own
    *  turn-end event and kept through restatements. Absent from old hosts and unclassified agents. */
   turnEndedAt?: number
+  /** How the host identified that end; absent from old hosts (legacy). */
+  turnEndDisposition?: TurnEndDisposition
   orchestration?: AgentStatusOrchestrationContext
   providerSession?: AgentProviderSessionMetadata
   /** Resume identity update only; the status-shaped fields are transport placeholders. */

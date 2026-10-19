@@ -1,6 +1,6 @@
 import { sameAgentStatusTerminalOwner } from '../../../../shared/agent-status-terminal-owner'
 import { isWslHookRelayConnectionId } from '../../../../shared/wsl-hook-relay-contract'
-import type { AgentStatusIpcPayload } from '../../../../shared/agent-status-types'
+import { pickHostTurnEnd, type AgentStatusIpcPayload } from '../../../../shared/agent-status-types'
 import {
   resolveAgentStatusIdentity,
   shouldSuppressInheritedTerminalStatus
@@ -241,7 +241,7 @@ export function createAgentStatusEventApplicator(args: {
           : {}),
         stateStartedAt: data.stateStartedAt,
         ...(Number.isFinite(data.turnStartedAt) ? { turnStartedAt: data.turnStartedAt } : {}),
-        ...(Number.isFinite(data.turnEndedAt) ? { turnEndedAt: data.turnEndedAt } : {})
+        ...pickHostTurnEnd(data)
       },
       routing: {
         tabId: ownerTabId,
@@ -259,7 +259,7 @@ export function createAgentStatusEventApplicator(args: {
         const notificationPayload = {
           ...resolvedPayload,
           stateStartedAt: data.stateStartedAt,
-          turnEndedAt: data.turnEndedAt
+          ...pickHostTurnEnd(data)
         }
         observeAgentHookCompletionForNotification({
           paneKey,

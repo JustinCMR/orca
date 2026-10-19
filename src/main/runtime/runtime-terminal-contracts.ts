@@ -201,6 +201,7 @@ export type HookLiveAgentRow = Pick<
   | 'evidenceObservedAt'
   | 'stateStartedAt'
   | 'turnEndedAt'
+  | 'turnEndDisposition'
   | 'worktreeId'
   | 'programStatus'
 >

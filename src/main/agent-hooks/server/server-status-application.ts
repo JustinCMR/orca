@@ -152,7 +152,7 @@ export abstract class AgentHookServerStatusApplication extends AgentHookServerSt
         : (observedAt ?? now)
     const turnStartedAt = resolveTurnStartedAt(previous, payload, observedAt ?? now)
     // Why: a relay's row was minted on the relay, which saw the event; main only restates it.
-    const { turnEndedAt, hostTurn } = reduceHostTurnEnd(
+    const { hostTurn, ...turnEnd } = reduceHostTurnEnd(
       previous,
       payload,
       observedAt ?? now,
@@ -162,6 +162,7 @@ export abstract class AgentHookServerStatusApplication extends AgentHookServerSt
       stopHookActive: _stopHookActive,
       nativeTurnKey: _nativeTurnKey,
       turnEndedAt: _turnEndedAt,
+      turnEndDisposition: _turnEndDisposition,
       hostTurn: _hostTurn,
       ...event
     } = payload
@@ -173,7 +174,7 @@ export abstract class AgentHookServerStatusApplication extends AgentHookServerSt
       stateStartedAt,
       // Always written here, so a producer can never declare it.
       turnStartedAt,
-      ...(turnEndedAt !== undefined ? { turnEndedAt } : {}),
+      ...turnEnd,
       ...(hostTurn ? { hostTurn } : {})
     }
   }

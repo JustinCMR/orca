@@ -16,6 +16,9 @@ import type { StoreState } from './pty-connection-test-store-state'
 import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinator-types'
 import type { NotificationDispatchRequest } from '../../../../shared/notification-settings-types'
 import { reserveNotificationCooldown } from '../../../../shared/notification-burst-cooldown'
+import { reduceHostTurnEnd } from '../../../../shared/agent-hook-turn-end-timing'
+import { pickHostTurnEnd } from '../../../../shared/agent-status-types'
+import type { AgentHookEventPayload } from '../../../../shared/agent-hook-listener/listener-event'
 import {
   installTerminalTestGlobals,
   restoreTerminalTestGlobals
@@ -28,7 +31,9 @@ type TimelineEvent =
   | { at: number; title: string; bell?: true }
   | { at: number; bell: true }
   | { at: number; foreground: string | null }
-  | { at: number; hook: 'working' | 'done'; message?: string; restated?: true }
+  | { at: number; hook: HookName; message?: string; flagged?: true }
+
+type HookName = 'UserPromptSubmit' | 'PreToolUse' | 'Stop' | 'Notification'
 
 // Recorded from Claude Code 2.1.280 over a real PTY (ms from launch): one prompt, then a
 // `/btw` side question 45 s later. The side question spins the title and fires no hook.
@@ -36,12 +41,12 @@ type TimelineEvent =
 // after the side question's idle title stands in for Codex /compact's (QA F5b).
 const SIDE_QUESTION: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
-  { at: 3_416, hook: 'working' },
+  { at: 3_416, hook: 'UserPromptSubmit' },
   { at: 3_686, title: '◐ Claude Code' },
   { at: 4_647, title: '◑ Claude Code' },
   { at: 7_050, title: '◑ The sea' },
   { at: 7_552, title: '◐ The sea' },
-  { at: 8_447, hook: 'done', message: SEA },
+  { at: 8_447, hook: 'Stop', message: SEA },
   { at: 8_760, title: '✳ The sea', bell: true },
   { at: 53_328, title: '◑ The sea' },
   { at: 54_299, title: '◐ The sea' },
@@ -61,19 +66,50 @@ const SIDE_QUESTION: TimelineEvent[] = [
 // whose re-entered Stop is overtaken by the user's next prompt before its cooldown passes.
 const BLOCKED_STOP: TimelineEvent[] = [
   { at: 0, title: '✳ Claude Code' },
-  { at: 1_000, hook: 'working' },
+  { at: 1_000, hook: 'UserPromptSubmit' },
   { at: 1_200, title: '◐ Claude Code' },
-  { at: 5_000, hook: 'done', message: 'Draft answer.' },
+  { at: 5_000, hook: 'Stop', message: 'Draft answer.' },
   { at: 6_000, title: '◑ Claude Code' },
-  { at: 8_000, hook: 'done', message: 'Draft answer.' },
-  { at: 9_500, hook: 'done', message: 'Final answer.' },
+  { at: 8_000, hook: 'Stop', message: 'Draft answer.', flagged: true },
+  { at: 9_500, hook: 'Stop', message: 'Final answer.', flagged: true },
   { at: 9_590, title: '✳ Claude Code' },
-  { at: 72_000, hook: 'done', restated: true },
-  { at: 80_000, hook: 'working' },
-  { at: 85_000, hook: 'done', message: 'Second turn.' },
-  { at: 87_000, hook: 'done', message: 'Second turn, revised.' },
-  { at: 88_000, hook: 'working' },
-  { at: 93_000, hook: 'done', message: 'Third turn.' }
+  { at: 72_000, hook: 'Notification' },
+  { at: 80_000, hook: 'UserPromptSubmit' },
+  { at: 85_000, hook: 'Stop', message: 'Second turn.' },
+  { at: 87_000, hook: 'Stop', message: 'Second turn, revised.', flagged: true },
+  { at: 88_000, hook: 'UserPromptSubmit' },
+  { at: 93_000, hook: 'Stop', message: 'Third turn.' }
+]
+
+// Prompt hooks the host never received (a POST past its 1.5 s limit). Each such end is ambiguous,
+// so the pane keeps main's banners whichever of the title and the hook comes first; a verified
+// tool-using continuation still gets its final banner, and a later unflagged repeat stays quiet.
+const LOST_OPENINGS: TimelineEvent[] = [
+  { at: 0, title: '✳ Claude Code' },
+  { at: 1_000, hook: 'UserPromptSubmit' },
+  { at: 1_200, title: '◐ Claude Code' },
+  { at: 5_000, hook: 'Stop', message: 'First.' },
+  { at: 5_300, title: '✳ Claude Code' },
+  // Text-only, the idle title before the Stop.
+  { at: 20_000, title: '◐ Claude Code' },
+  { at: 24_000, title: '✳ Claude Code' },
+  { at: 24_800, hook: 'Stop', message: 'Second.' },
+  { at: 40_000, hook: 'UserPromptSubmit' },
+  { at: 40_200, title: '◐ Claude Code' },
+  { at: 44_000, hook: 'Stop', message: 'Draft.' },
+  { at: 46_000, hook: 'PreToolUse' },
+  { at: 52_000, hook: 'Stop', message: 'Final.', flagged: true },
+  { at: 52_300, title: '✳ Claude Code' },
+  // Text-only, the working title before the missing prompt hook.
+  { at: 70_000, title: '◐ Claude Code' },
+  { at: 74_000, hook: 'Stop', message: 'Third.' },
+  { at: 74_300, title: '✳ Claude Code' },
+  // Tool-using, the working title first.
+  { at: 90_000, title: '◐ Claude Code' },
+  { at: 90_500, hook: 'PreToolUse' },
+  { at: 95_000, hook: 'Stop', message: 'Fourth.' },
+  { at: 95_300, title: '✳ Claude Code' },
+  { at: 110_000, hook: 'Stop', message: 'Fourth.' }
 ]
 
 describe('Claude completion banners through the real pane and hook lanes', () => {
@@ -166,8 +202,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     }
     let working = false
     let elapsed = 0
-    let doneStartedAt: number | undefined
-    let turnEndedAt: number | undefined
+    let hostRow: (AgentHookEventPayload & { stateStartedAt?: number }) | undefined
     for (const event of timeline) {
       await vi.advanceTimersByTimeAsync(event.at - elapsed)
       elapsed = event.at
@@ -191,17 +226,27 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
         }
         continue
       }
-      // The host pins `stateStartedAt` while the state stays `done`, and stamps each real Stop.
+      // The host's own derivation: its state clock, end stamp and disposition.
+      const hookEvent: AgentHookEventPayload = {
+        paneKey: PANE_KEY,
+        source: 'claude',
+        hookEventName: event.hook,
+        ...(event.flagged ? { stopHookActive: true } : {}),
+        payload: {
+          state: event.hook === 'Stop' || event.hook === 'Notification' ? 'done' : 'working',
+          prompt: 'Reply with one short sentence.',
+          agentType: 'claude',
+          ...(event.message ? { lastAssistantMessage: event.message } : {})
+        }
+      }
       const stateStartedAt =
-        event.hook === 'done' ? (doneStartedAt ??= Date.now()) : (doneStartedAt = undefined)
-      turnEndedAt = event.hook !== 'done' ? undefined : event.restated ? turnEndedAt : Date.now()
+        hostRow?.payload.state === hookEvent.payload.state ? hostRow.stateStartedAt : Date.now()
+      hostRow = { ...hookEvent, ...reduceHostTurnEnd(hostRow, hookEvent, Date.now(), true) }
+      hostRow.stateStartedAt = stateStartedAt
       const payload: AgentCompletionStatusSnapshot = {
-        state: event.hook,
-        prompt: 'Reply with one short sentence.',
-        agentType: 'claude',
-        ...(event.message ? { lastAssistantMessage: event.message } : {}),
-        stateStartedAt: stateStartedAt ?? Date.now(),
-        ...(turnEndedAt !== undefined ? { turnEndedAt } : {})
+        ...hookEvent.payload,
+        stateStartedAt,
+        ...pickHostTurnEnd(hostRow)
       }
       mockStoreState.agentStatusByPaneKey[PANE_KEY] = {
         ...payload,
@@ -251,5 +296,17 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
       rich('Second turn.'),
       rich('Third turn.')
     ])
+  })
+
+  const LOST_OPENING_BANNERS = ['First.', 'Second.', 'Draft.', 'Final.', 'Third.', 'Fourth.']
+
+  it('keeps every banner when the host missed a prompt hook, whichever title edge comes first', async () => {
+    await play(LOST_OPENINGS)
+    expect(banners).toEqual(LOST_OPENING_BANNERS.map(rich))
+  })
+
+  it('matches the banners of a paired server that predates the stamp', async () => {
+    await play(LOST_OPENINGS, 'old-server')
+    expect(banners).toEqual(LOST_OPENING_BANNERS.map(rich))
   })
 })

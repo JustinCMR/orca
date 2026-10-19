@@ -66,6 +66,7 @@ export function applyRelayHookEvent(
     stopHookActive: _stopHookActive,
     nativeTurnKey: _nativeTurnKey,
     turnEndedAt: _turnEndedAt,
+    turnEndDisposition: _turnEndDisposition,
     hostTurn: _hostTurn,
     ...unflagged
   } = revised

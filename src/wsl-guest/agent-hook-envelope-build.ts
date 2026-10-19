@@ -3,6 +3,7 @@
 // redelivery of the same envelope.
 import type { AgentHookEventPayload } from '../shared/agent-hook-listener/listener-event'
 import type { AgentHookRelayEnvelope, AgentHookSource } from '../shared/agent-hook-relay'
+import { pickHostTurnEnd } from '../shared/agent-status-types'
 
 // Why: cap metadata to prevent a misbehaving CLI growing the cache unboundedly.
 const MAX_HOOK_META_LEN = 64
@@ -40,7 +41,7 @@ export function buildRelayHookEnvelope(
     ...(event.providerSession ? { providerSession: event.providerSession } : {}),
     ...(event.providerSessionOnly ? { providerSessionOnly: true } : {}),
     isReplay: options.isReplay === true ? true : undefined,
-    ...(event.turnEndedAt !== undefined ? { turnEndedAt: event.turnEndedAt } : {}),
+    ...pickHostTurnEnd(event),
     env,
     version,
     payload: event.payload

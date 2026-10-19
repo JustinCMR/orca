@@ -10,6 +10,7 @@ import {
   getAgentCompletionCoordinatorIdentityCountForTest,
   resetAgentCompletionCoordinatorIdentitiesForTest
 } from './agent-completion-identity-store'
+import { createTitleCompletionClaim } from './agent-completion-title-claim'
 import { createAgentCompletionProcessMonitor } from './agent-completion-process-monitor'
 import { createPendingTitleController } from './agent-completion-pending-title'
 import {
@@ -60,6 +61,14 @@ export function createAgentCompletionCoordinator(
     lastForegroundAgent: null as RecognizedAgentProcess | null,
     processSession: 0
   }
+  const titleClaim = createTitleCompletionClaim({
+    options,
+    state: completionState,
+    processState,
+    identityScope,
+    titleAgentIdentity: (title) => titleObserver.titleCompletionAgentIdentity(title),
+    dispatchTitle: (title) => titleObserver.dispatchTitle(title)
+  })
   let processMonitor!: ReturnType<typeof createAgentCompletionProcessMonitor>
   let pendingTitle!: ReturnType<typeof createPendingTitleController>
   let notification!: ReturnType<typeof createAgentCompletionNotificationController>
@@ -181,7 +190,7 @@ export function createAgentCompletionCoordinator(
     holdTitleCompletionPending,
     hasPendingTitle: () => pendingTitle.get() !== null,
     dropPendingTitle,
-    claimTitleCompletion,
+    claimTitleCompletion: (title) => titleClaim.claim(title),
     dispatchTitleCompletion: (title) =>
       dispatchCompletion('title', title, {
         completionIdentity: {
@@ -194,6 +203,7 @@ export function createAgentCompletionCoordinator(
 
   function dropPendingTitle(): void {
     pendingTitle.drop()
+    titleClaim.cancelOwnedIdle()
   }
 
   function dispatchPendingTitleIfEligible(): void {
@@ -232,14 +242,10 @@ export function createAgentCompletionCoordinator(
     ) {
       return false
     }
-    // Why: a spin on a settled hook-owned pane (/btw, a quit) opens no turn, so it keeps the hook's receipt.
-    const foreground = processState.lastForegroundAgent?.agent ?? null
-    if (options.titleWorkingOwnedByHooks?.(title, foreground) === true) {
-      return true
-    }
     completionState.workingStatusObserved = true
     completionState.requiresFreshWorking = false
-    if (!hasUnconsumedStampedTail()) {
+    // Why: the turn is tracked even on a hook-owned pane, in case its end turns out ambiguous.
+    if (!titleClaim.keepsHookReceipt(title) && !hasUnconsumedStampedTail()) {
       identityScope.deleteLast()
     }
     completionState.currentTurn += 1
@@ -249,21 +255,6 @@ export function createAgentCompletionCoordinator(
 
   function observeTitleWorking(): void {
     recordTitleWorking(null)
-  }
-
-  function claimTitleCompletion(title: string): boolean {
-    // Why: the hook lane announces this turn end, so settle the turn here without the claim that would swallow its Done.
-    if (options.titleCompletionOwnedByHooks?.(title) === true) {
-      completionState.lastCompletedTurn = completionState.currentTurn
-      completionState.workingStatusObserved = false
-      return false
-    }
-    completionState.lastCompletionIdentity = {
-      source: 'title',
-      identity: title,
-      agentIdentity: titleObserver.titleCompletionAgentIdentity(title)
-    }
-    return true
   }
 
   hookObserver = createAgentCompletionHookObserver({

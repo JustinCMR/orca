@@ -8,8 +8,9 @@ import { buildBody, postHookEvent, PANE } from './server.test-fixtures'
 vi.mock('../telemetry/client', () => ({ track: vi.fn() }))
 vi.mock('../telemetry/cohort-classifier', () => ({ getCohortAtEmit: () => ({}) }))
 
-// The execution host marks each real turn end: a new turn (by the agent's turn id, or a prompt) or a
-// verified re-entered Stop is a new end, and every restatement of a finished turn keeps the old one.
+// The execution host labels each turn end by what it can prove now: an identified end (an unused
+// opening or a new turn id) or revision (a verified re-entered Stop) mints; a proven repeat keeps
+// the end; anything else is ambiguous, never mints, and leaves main's title behavior to the renderer.
 describe('the host-stamped turn end', () => {
   let server: AgentHookServer
   let directory: string
@@ -33,23 +34,30 @@ describe('the host-stamped turn end', () => {
   }
   const row = () => server.getStatusSnapshot()[0]
 
-  it('mints a new end only for a re-entered Stop, whatever the text', async () => {
+  it('mints identified ends and revisions; an unproven repeat or a lost opening is ambiguous', async () => {
     await post({ hook_event_name: 'UserPromptSubmit', prompt: 'Lint the repo' })
     await post({ hook_event_name: 'Stop', last_assistant_message: 'Done.' })
     const first = row()
-    expect(first?.turnEndedAt).toEqual(expect.any(Number))
+    expect(first).toMatchObject({ turnEndDisposition: 'identified' })
 
-    // A duplicate delivery and an idle reminder restate the turn.
+    // Without a turn id, a repeat can't be told from a turn whose prompt hook never arrived.
     await post({ hook_event_name: 'Stop', last_assistant_message: 'Done.' })
     await post({ hook_event_name: 'Notification', notification_type: 'idle_prompt' })
-    expect(row()).toMatchObject({ turnEndedAt: first?.turnEndedAt })
+    expect(row()).toMatchObject({
+      turnEndedAt: first?.turnEndedAt,
+      turnEndDisposition: 'ambiguous'
+    })
 
-    // A blocking Stop hook made Claude continue; the same text still ends a new turn.
+    // A blocking Stop hook made Claude continue; the same text still ends a new attempt.
     await post({ hook_event_name: 'Stop', stop_hook_active: true, last_assistant_message: 'Done.' })
     expect(row()?.turnEndedAt).toBeGreaterThan(first!.turnEndedAt!)
+    expect(row()).toMatchObject({ turnEndDisposition: 'identified' })
     expect(row()?.stateStartedAt).toBe(first?.stateStartedAt)
 
-    await post({ hook_event_name: 'UserPromptSubmit', prompt: 'Again' })
+    // The next prompt's hook was lost: its tool work and Stop reuse no earlier end.
+    await post({ hook_event_name: 'PreToolUse', tool_name: 'Bash' })
+    await post({ hook_event_name: 'Stop', last_assistant_message: 'Second.' })
+    expect(row()).toMatchObject({ state: 'done', turnEndDisposition: 'ambiguous' })
     expect(row()).not.toHaveProperty('turnEndedAt')
   })
 
@@ -65,7 +73,11 @@ describe('the host-stamped turn end', () => {
       { hookEventName: 'notification', sessionId: 'session-2', notificationType: 'idle_prompt' },
       '/hook/grok'
     )
-    expect(row()).toMatchObject({ state: 'done', turnEndedAt: ended })
+    expect(row()).toMatchObject({
+      state: 'done',
+      turnEndedAt: ended,
+      turnEndDisposition: 'identified'
+    })
   })
 
   it('ends Codex turns by turn id, with or without a prompt hook in between', async () => {
@@ -75,11 +87,16 @@ describe('the host-stamped turn end', () => {
     const first = row()?.turnEndedAt
     expect(first).toEqual(expect.any(Number))
 
-    // The same turn's duplicate Stop, and a tool reopen of it, restate its end.
+    // Its turn id and continuation flag prove an unflagged same-turn Stop is a duplicate, even
+    // after a tool reopen.
     await codex({ hook_event_name: 'Stop', turn_id: 'turn-a', last_assistant_message: 'Planned.' })
     await codex({ hook_event_name: 'PreToolUse', turn_id: 'turn-a', tool_name: 'Bash' })
     await codex({ hook_event_name: 'Stop', turn_id: 'turn-a', last_assistant_message: 'Planned.' })
-    expect(row()).toMatchObject({ state: 'done', turnEndedAt: first })
+    expect(row()).toMatchObject({
+      state: 'done',
+      turnEndedAt: first,
+      turnEndDisposition: 'identified'
+    })
 
     // A turn woken by agent mail runs no prompt hook and stays `done`; its own turn id ends it.
     await codex({ hook_event_name: 'Stop', turn_id: 'turn-b', last_assistant_message: 'Replied.' })
@@ -92,39 +109,38 @@ describe('the host-stamped turn end', () => {
     expect(row()).not.toHaveProperty('hostTurn')
   })
 
-  it('ends identical Command Code prompts at new transcript positions as new turns', async () => {
+  it('ends Command Code turns by transcript position; a same-position repeat is ambiguous', async () => {
     const transcriptPath = join(directory, 'command-code.jsonl')
     const prompt = `${JSON.stringify({ role: 'user', content: 'Status?' })}\n`
     const stop = { hook_event_name: 'Stop', transcript_path: transcriptPath }
     writeFileSync(transcriptPath, prompt)
     await post(stop, '/hook/command-code')
     const first = row()?.turnEndedAt
-    expect(first).toEqual(expect.any(Number))
+    expect(row()).toMatchObject({ turnEndDisposition: 'identified' })
+    // Its key alone doesn't prove a repeat (no verified continuation flag).
     await post(stop, '/hook/command-code')
-    expect(row()?.turnEndedAt).toBe(first)
+    expect(row()).toMatchObject({ turnEndedAt: first, turnEndDisposition: 'ambiguous' })
 
     writeFileSync(transcriptPath, prompt.repeat(2))
     await post(stop, '/hook/command-code')
     expect(row()?.turnEndedAt).toBeGreaterThan(first!)
+    expect(row()).toMatchObject({ turnEndDisposition: 'identified' })
   })
 
   it('restates the end when a result retry adds the late transcript text', async () => {
     const transcriptPath = join(directory, 'events.jsonl')
     writeFileSync(transcriptPath, '')
     await post({ hook_event_name: 'UserPromptSubmit', prompt: 'Fix it' }, '/hook/copilot')
-    // The Stop's text isn't flushed yet; its retry re-reads the same Stop body. Copilot's own
-    // re-entry flag is unverified, so it restates like any repeat.
-    const stop = { hook_event_name: 'Stop', stop_hook_active: true }
-    await post({ ...stop, transcript_path: transcriptPath }, '/hook/copilot')
+    // The Stop's text isn't flushed yet; its retry re-reads the same Stop body.
+    const stop = { hook_event_name: 'Stop', transcript_path: transcriptPath }
+    await post(stop, '/hook/copilot')
     const ended = row()?.turnEndedAt
-    expect(ended).toEqual(expect.any(Number))
-    await post({ ...stop, transcript_path: transcriptPath }, '/hook/copilot')
-    expect(row()?.turnEndedAt).toBe(ended)
+    expect(row()).toMatchObject({ turnEndDisposition: 'identified' })
 
     const line = { type: 'assistant.message', data: { content: 'Tests pass.' } }
     writeFileSync(transcriptPath, `${JSON.stringify(line)}\n`)
     await vi.waitFor(() => expect(row()?.lastAssistantMessage).toBe('Tests pass.'))
-    expect(row()?.turnEndedAt).toBe(ended)
+    expect(row()).toMatchObject({ turnEndedAt: ended, turnEndDisposition: 'identified' })
   })
 
   it('reaches the live push and survives a host restart, so a restatement stays the same end', async () => {
@@ -139,7 +155,7 @@ describe('the host-stamped turn end', () => {
 
     server = new AgentHookServer()
     await server.start({ env: 'production', userDataPath: directory })
-    expect(row()).toMatchObject({ turnEndedAt: ended })
+    expect(row()).toMatchObject({ turnEndedAt: ended, turnEndDisposition: 'identified' })
     // The saved turn record still knows turn-a ended, through a working reopen too.
     await post(
       { hook_event_name: 'PreToolUse', turn_id: 'turn-a', tool_name: 'Bash' },
@@ -160,7 +176,7 @@ describe('the host-stamped turn end', () => {
     server.ingestRemote(stop, 'wsl-old')
     expect(row()).not.toHaveProperty('turnEndedAt')
 
-    server.ingestRemote({ ...stop, turnEndedAt: 42 }, 'wsl-old')
-    expect(row()).toMatchObject({ turnEndedAt: 42 })
+    server.ingestRemote({ ...stop, turnEndedAt: 42, turnEndDisposition: 'ambiguous' }, 'wsl-old')
+    expect(row()).toMatchObject({ turnEndedAt: 42, turnEndDisposition: 'ambiguous' })
   })
 })

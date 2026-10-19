@@ -3,10 +3,17 @@ import { isNewTurnEvent, isTurnEndEvent } from './agent-hook-listener/provider-e
 import { readString } from './agent-hook-listener/tool-input-preview'
 import type { AgentHookSource } from './agent-hook-relay'
 import { agentReportsStopHookContinuation } from './agent-stop-hook-continuation'
+import { pickHostTurnEnd, type HostTurnEndFacts } from './agent-status-types'
 
-type TurnEndTimingRow = Pick<AgentHookEventPayload, 'turnEndedAt' | 'payload' | 'hostTurn'>
+type TurnEndTimingRow = Pick<
+  AgentHookEventPayload,
+  'turnEndedAt' | 'turnEndDisposition' | 'payload' | 'hostTurn'
+>
 
-type HostTurnEnd = { turnEndedAt?: number; hostTurn?: HostTurnRecord }
+type HostTurnEnd = HostTurnEndFacts & { hostTurn?: HostTurnRecord }
+
+// Why: a record with no verified opening or native key yet (a new session, a pre-record row).
+const UNOPENED_TURN = 'seed'
 
 /** The hook body's turn facts the host folds into its turn record; in-process only. */
 export function readHostTurnSignals(
@@ -56,10 +63,12 @@ function resolveOwner(
 /**
  * The one turn-end derivation every execution host runs (local main and the WSL relay). A turn
  * advances on the agent's native turn key (Codex `turn_id`, Command Code's transcript position)
- * or, without one, only on a prompt-opening event. A live root turn-end event mints a new end when
- * its turn differs from the last ended one, or when a verified continuation re-entered after a
- * blocking Stop hook; every restatement (duplicate, replay, idle reminder, tool reopen, result
- * retry) carries the old end. Keys are opaque: only compared for equality.
+ * or, without one, only on a prompt-opening event. A live root turn-end event is an identified
+ * end, minted, when its turn is unused or a verified continuation re-entered after a blocking Stop
+ * hook. A same-turn repeat is a proven duplicate only for an agent with both a native key and a
+ * verified continuation flag; otherwise it is ambiguous (a repeat, or a turn whose opening never
+ * arrived) and never mints. Restatements (replay, retry, idle reminder, enrichment) keep the end
+ * shown in the current done segment. Keys are opaque: only compared for equality.
  */
 export function reduceHostTurnEnd(
   previous: TurnEndTimingRow | undefined,
@@ -67,35 +76,23 @@ export function reduceHostTurnEnd(
   at: number,
   canMint: boolean
 ): HostTurnEnd {
-  const carried =
-    previous?.payload.state === 'done' && isTurnEndedAt(previous.turnEndedAt)
-      ? previous.turnEndedAt
-      : undefined
-  // Why: a relay or a result retry already decided this event's end; the host restates its answer.
-  if (!canMint || isTurnEndedAt(event.turnEndedAt)) {
-    const decided = isTurnEndedAt(event.turnEndedAt) ? event.turnEndedAt : carried
+  const shown = previous?.payload.state === 'done' ? pickHostTurnEnd(previous) : {}
+  const done = event.payload.state === 'done'
+  // Why: a relay, a result retry or a replay already decided this event's end; the host restates it.
+  if (!canMint || event.isReplay === true || event.turnEndDisposition !== undefined) {
     return {
-      ...(event.payload.state === 'done' && decided !== undefined ? { turnEndedAt: decided } : {}),
+      ...(done ? (event.turnEndDisposition !== undefined ? pickHostTurnEnd(event) : shown) : {}),
       ...(previous?.hostTurn ? { hostTurn: previous.hostTurn } : {})
     }
   }
   let record = previous?.hostTurn
   const source = event.source
   const isLiveRoot =
-    source !== undefined &&
-    event.toolAgentId === undefined &&
-    event.isReplay !== true &&
-    event.providerSessionOnly !== true
+    source !== undefined && event.toolAgentId === undefined && event.providerSessionOnly !== true
   if (isLiveRoot) {
     const { owner, replaced } = resolveOwner(record, { ...event, source })
     if (!record || replaced) {
-      // Why: a row saved before this record existed keeps its last end as the current turn's.
-      const seededEnd = replaced ? undefined : carried
-      record = {
-        owner,
-        currentTurnKey: 'seed',
-        ...(seededEnd !== undefined ? { completed: { turnKey: 'seed', endedAt: seededEnd } } : {})
-      }
+      record = { owner, currentTurnKey: UNOPENED_TURN }
     } else if (record.owner !== owner) {
       record = { ...record, owner }
     }
@@ -108,26 +105,36 @@ export function reduceHostTurnEnd(
       record = { ...record, currentTurnKey: `opened:${at}` }
     }
   }
-  if (event.payload.state !== 'done') {
-    return record ? { hostTurn: record } : {}
+  const kept = record ? { hostTurn: record } : {}
+  if (!done) {
+    return kept
   }
-  if (!record) {
-    return carried !== undefined ? { turnEndedAt: carried } : {}
+  if (
+    !record ||
+    !isLiveRoot ||
+    event.payload.sessionBoundary === true ||
+    !isTurnEndEvent(source, event.hookEventName)
+  ) {
+    return { ...shown, ...kept }
   }
   const completed = record.completed
-  if (
-    isLiveRoot &&
-    event.payload.sessionBoundary !== true &&
-    isTurnEndEvent(source, event.hookEventName) &&
-    (completed?.turnKey !== record.currentTurnKey || event.stopHookActive === true)
-  ) {
+  const sameTurn = completed?.turnKey === record.currentTurnKey
+  if (event.stopHookActive === true || (!sameTurn && record.currentTurnKey !== UNOPENED_TURN)) {
     const endedAt = Math.max(at, (completed?.endedAt ?? 0) + 1)
     return {
       turnEndedAt: endedAt,
+      turnEndDisposition: 'identified',
       hostTurn: { ...record, completed: { turnKey: record.currentTurnKey, endedAt } }
     }
   }
-  // Why: a restatement that changed only the session or turn key (no end yet) keeps the shown end.
-  const restated = completed?.turnKey === record.currentTurnKey ? completed.endedAt : carried
-  return { ...(restated !== undefined ? { turnEndedAt: restated } : {}), hostTurn: record }
+  // Why: the agent's own turn id plus a verified continuation flag mean an unflagged repeat of
+  // this turn's Stop is a duplicate delivery (Codex re-fires it flagged for a continuation).
+  if (completed && sameTurn && event.nativeTurnKey && agentReportsStopHookContinuation(source)) {
+    return { turnEndedAt: completed.endedAt, turnEndDisposition: 'identified', ...kept }
+  }
+  return {
+    ...(shown.turnEndedAt !== undefined ? { turnEndedAt: shown.turnEndedAt } : {}),
+    turnEndDisposition: 'ambiguous',
+    ...kept
+  }
 }

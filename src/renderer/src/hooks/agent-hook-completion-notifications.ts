@@ -15,7 +15,7 @@ import {
   shouldSyncAgentHookCompletionForStoreUpdate,
   type AgentHookCompletionStoreSnapshot
 } from './agent-hook-completion-store-sync'
-import { paneUsesHookTurnEnds } from './agent-hook-turn-end-capability'
+import { hookTurnEndEvidence } from './agent-hook-turn-end-capability'
 import {
   discardHookLaneCompletionRequests,
   submitHookLaneCompletion
@@ -204,8 +204,8 @@ function hookLaneDispatchEnabled(paneKey: string): boolean {
   return isAgentTaskCompleteTrackingEnabled() && !paneKeysRequiringFreshWorking.has(paneKey)
 }
 
-function paneUsesHookLaneTurnEnds(paneKey: string, agentType: string | undefined): boolean {
-  return paneUsesHookTurnEnds(getPtyIdForPaneKey(paneKey), agentType)
+function hookLaneOwnsTurnEnd(paneKey: string, snapshot: AgentCompletionStatusSnapshot): boolean {
+  return hookTurnEndEvidence(getPtyIdForPaneKey(paneKey), snapshot) === 'identified'
 }
 
 function createCoordinator(paneKey: string, worktreeId: string): AgentCompletionCoordinator {
@@ -213,7 +213,7 @@ function createCoordinator(paneKey: string, worktreeId: string): AgentCompletion
     paneKey,
     statusLane: 'hook',
     getPtyId: () => getPtyIdForPaneKey(paneKey),
-    usesHookTurnEnds: (agentType) => paneUsesHookLaneTurnEnds(paneKey, agentType),
+    usesHookTurnEnds: (snapshot) => hookLaneOwnsTurnEnd(paneKey, snapshot),
     inspectProcess: async (): Promise<RuntimeTerminalProcessInspection> => ({
       foregroundProcess: null,
       hasChildProcesses: false
@@ -228,7 +228,8 @@ function createCoordinator(paneKey: string, worktreeId: string): AgentCompletion
         keepsAuthority: () =>
           hookLaneDispatchEnabled(paneKey) &&
           coordinatorsByPaneKey.has(paneKey) &&
-          paneUsesHookLaneTurnEnds(paneKey, snapshot?.agentType),
+          snapshot !== undefined &&
+          hookLaneOwnsTurnEnd(paneKey, snapshot),
         submit: (onDispatchResult) =>
           dispatchTerminalNotification(worktreeId, {
             source: 'agent-task-complete',
@@ -300,12 +301,10 @@ export function observeAgentHookCompletionForNotification({
   if (payload.state === 'working' && payload.turnCompletedAt === undefined && trackingEnabled) {
     paneKeysRequiringFreshWorking.delete(paneKey)
   }
-  // Why: on any other pane the end stamp must not change main's done identity or replay guard.
-  const { turnEndedAt, ...legacyPayload } = payload
+  // Why: on a legacy pane the host's end facts must not change main's done identity or replay guard.
+  const { turnEndedAt: _turnEndedAt, turnEndDisposition: _disposition, ...legacyPayload } = payload
   const observed =
-    turnEndedAt !== undefined && paneUsesHookLaneTurnEnds(paneKey, payload.agentType)
-      ? payload
-      : legacyPayload
+    hookTurnEndEvidence(getPtyIdForPaneKey(paneKey), payload) === 'legacy' ? legacyPayload : payload
   if (seedOnly === true) {
     entry.coordinator.seedHookStatus(observed)
   } else {
@@ -322,7 +321,8 @@ export function hookLaneCanAnnouncePaneTurnEnd(paneKey: string): boolean {
 export function hasPendingHookLaneCompletion(paneKey: string, ptyId: string | null): boolean {
   return (
     coordinatorsByPaneKey.get(paneKey)?.coordinator.hasPendingHookDoneCompletion() === true &&
-    paneUsesHookTurnEnds(ptyId, useAppStore.getState().agentStatusByPaneKey[paneKey]?.agentType)
+    hookTurnEndEvidence(ptyId, useAppStore.getState().agentStatusByPaneKey[paneKey]) ===
+      'identified'
   )
 }
 

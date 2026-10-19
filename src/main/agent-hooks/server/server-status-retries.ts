@@ -5,6 +5,7 @@ import {
   preparePendingGrokResultDiscovery
 } from '../../../shared/agent-hook-listener/grok-result-discovery'
 import type { AgentHookSource } from '../../../shared/agent-hook-relay'
+import { pickHostTurnEnd } from '../../../shared/agent-status-types'
 import {
   shouldPollHookTranscript,
   hookTranscriptWatchPath,
@@ -165,7 +166,7 @@ export abstract class AgentHookServerStatusRetries extends AgentHookServerStatus
     // Why: some agents POST Stop before their transcript line is flushed; discovery is event-driven, later content retries stay timed.
     // The retry only adds text to the same turn end, so it restates that end instead of minting one.
     this.applyNormalizedStatus(
-      { ...normalized.event, turnEndedAt: current.turnEndedAt },
+      { ...normalized.event, ...pickHostTurnEnd(current) },
       normalized.onAccepted
     )
   }

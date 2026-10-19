@@ -10,9 +10,8 @@ import { createAgentCompletionCoordinator } from '../agent-completion-coordinato
 import { dispatchAgentHookTerminalLifecycle } from '../agent-hook-terminal-lifecycle'
 import {
   hookLaneOwnsAgentTurnEnds,
-  hookLaneOwnsTitleTurnEnds
+  hookLaneTitleTurnEndEvidence
 } from '@/hooks/agent-hook-turn-end-ownership'
-import { resolveCommittedTitleAgentType } from '@/lib/pane-agent-evidence'
 import { absorbBurstBellForHookOwnedIdle } from './agent-task-complete-notify'
 import { resolveCompatibleAgentTypeForOwner } from '../../../../../shared/agent-title-owner'
 import { registerTerminalSideEffectFactConsumer } from '../terminal-side-effect-facts-handler'
@@ -182,20 +181,14 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
     inspectProcess: inspectRuntimeTerminalProcess,
     dispatchHookLifecycle: (payload) =>
       dispatchAgentHookTerminalLifecycle(session.cacheKey, payload),
-    titleCompletionOwnedByHooks: (title) => {
-      if (!hookLaneOwnsTitleTurnEnds(session.cacheKey, session.transport.getPtyId(), title)) {
-        return false
-      }
-      absorbBurstBellForHookOwnedIdle(session)
-      return true
-    },
-    // Why: a title naming no agent belongs to the foreground process (goose after Claude opens a turn).
-    titleWorkingOwnedByHooks: (title, foregroundAgent) =>
-      hookLaneOwnsAgentTurnEnds(
+    titleTurnEndEvidence: (title, foregroundAgent) =>
+      hookLaneTitleTurnEndEvidence(
         session.cacheKey,
         session.transport.getPtyId(),
-        (title ? resolveCommittedTitleAgentType(title) : null) ?? foregroundAgent
+        title,
+        foregroundAgent
       ),
+    onHookOwnedTitleIdle: () => absorbBurstBellForHookOwnedIdle(session),
     shouldSuppressProcessReplacementCompletion: (exited, replacement) => {
       // Why: the hook lane owns this pane's turn ends and its last turn ended, so quitting ends none.
       if (hookLaneOwnsAgentTurnEnds(session.cacheKey, session.transport.getPtyId(), exited.agent)) {

@@ -1,5 +1,5 @@
 import type { AgentProcessPresence } from '../agent-process-presence'
-import type { ParsedAgentStatusPayload } from '../agent-status-types'
+import type { ParsedAgentStatusPayload, TurnEndDisposition } from '../agent-status-types'
 import type { AgentHookSource } from '../agent-hook-relay'
 import type { AgentProviderSessionMetadata } from '../agent-session-resume'
 import type { ClaudeSettledRequest } from './claude-settled-permission-requests'
@@ -62,6 +62,8 @@ export type AgentHookEventPayload = {
   /** When the main agent's latest turn ended, minted only by the execution host's turn-end
    *  derivation (agent-hook-turn-end-timing.ts); a relay forwards it and a result retry restates it. */
   turnEndedAt?: number
+  /** How the host identified that end (agent-hook-turn-end-timing.ts); forwarded and restated with it. */
+  turnEndDisposition?: TurnEndDisposition
   /** The agent's turn-end event re-entered after a blocking Stop hook (`stop_hook_active`), read
    *  only for agents whose signal is verified. In-process only; never stored or sent. */
   stopHookActive?: true

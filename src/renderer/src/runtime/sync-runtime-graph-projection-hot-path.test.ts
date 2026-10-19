@@ -113,6 +113,7 @@ function referenceAgentStatusProjection(map: AppState['agentStatusByPaneKey']): 
         stateStartedAt: entry.stateStartedAt,
         turnStartedAt: entry.turnStartedAt ?? null,
         turnEndedAt: entry.turnEndedAt ?? null,
+        turnEndDisposition: entry.turnEndDisposition ?? null,
         agentType: entry.agentType ?? null,
         terminalTitle: entry.terminalTitle ?? null,
         stateHistory: entry.stateHistory.map((history) => ({

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 
 import { normalizeAgentProviderSession } from '../../../shared/agent-session-resume'
 import {
+  isTurnEndDisposition,
   normalizeAgentStatusPayload,
   type AgentMainAgentStatus,
   type ParsedAgentStatusPayload
@@ -183,6 +184,9 @@ export function sanitizeHydratedEntry(
       ? { turnStartedAt }
       : {}),
     ...(isTurnEndedAt(turnEndedAt) ? { turnEndedAt } : {}),
+    ...(isTurnEndDisposition(record.turnEndDisposition)
+      ? { turnEndDisposition: record.turnEndDisposition }
+      : {}),
     ...(hostTurn ? { hostTurn } : {})
   }
 }

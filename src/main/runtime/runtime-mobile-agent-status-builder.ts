@@ -3,7 +3,11 @@ import {
   normalizeCompatibleAgentTitleForOwner
 } from '../../shared/agent-title-owner'
 import { resolvePaneAgentOwnerRecord } from '../../shared/pane-agent-owner'
-import type { AgentStatusEntry, AgentStatusIpcPayload } from '../../shared/agent-status-types'
+import {
+  pickHostTurnEnd,
+  type AgentStatusEntry,
+  type AgentStatusIpcPayload
+} from '../../shared/agent-status-types'
 import type { RuntimeMobileSessionTerminalTab } from '../../shared/runtime-types'
 import {
   renewRuntimeMobileAgentStatusFromPtyTitle,
@@ -110,7 +114,7 @@ export function buildRuntimeMobileAgentStatus(
           ? { evidenceObservedAt: liveRow.evidenceObservedAt }
           : {}),
         stateStartedAt: liveRow.stateStartedAt,
-        ...(liveRow.turnEndedAt !== undefined ? { turnEndedAt: liveRow.turnEndedAt } : {}),
+        ...pickHostTurnEnd(liveRow),
         stateHistory: [],
         ...(terminalHandle ? { terminalHandle } : {}),
         ...((pty?.worktreeId ?? liveRow.worktreeId)

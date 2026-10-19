@@ -1,7 +1,11 @@
 import type { AppState } from '../../store'
 import { useAppStore } from '../../store'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
-import { pickParsedAgentStatusPayload } from '../../../../shared/agent-status-types'
+import {
+  pickHostTurnEnd,
+  pickParsedAgentStatusPayload,
+  type TurnEndDisposition
+} from '../../../../shared/agent-status-types'
 import { normalizeTurnCompletedAtField } from '../../../../shared/agent-status-field-normalization'
 import { isSeenHostReplay } from '@/hooks/ipc-events/agent-status-routing'
 import { isClientAuthoritativeAgentStatusPane } from '@/components/terminal-pane/renderer-owned-agent-status-registry'
@@ -36,6 +40,7 @@ export function applyWebSessionTabsStorePatch(
     payload: ReturnType<typeof pickParsedAgentStatusPayload> & {
       stateStartedAt: number
       turnEndedAt?: number
+      turnEndDisposition?: TurnEndDisposition
       localStateStartedAt?: number
     }
   }[] = []
@@ -155,9 +160,7 @@ export function applyWebSessionTabsStorePatch(
                 ...(turnCompletedAt !== undefined ? { turnCompletedAt } : {})
               }),
               stateStartedAt: notificationStatus.stateStartedAt,
-              ...(notificationStatus.turnEndedAt !== undefined
-                ? { turnEndedAt: notificationStatus.turnEndedAt }
-                : {}),
+              ...pickHostTurnEnd(notificationStatus),
               ...(clientOwnedNotification ? { localStateStartedAt } : {})
             }
           })
