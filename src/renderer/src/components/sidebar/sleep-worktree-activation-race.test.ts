@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
     worktreesByRepo: {},
     detectedWorktreesByRepo: {},
     tabsByWorktree: {} as Record<string, { id: string }[]>,
+    unifiedTabsByWorktree: {},
     ptyIdsByTabId: {} as Record<string, string[]>
   }
   const activateAndRevealWorktree = vi.fn()
