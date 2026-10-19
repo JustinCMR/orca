@@ -18,7 +18,6 @@ export type WorkspaceHydrationPatch = Pick<
   | 'tabsByWorktree'
   | 'worktreesByRepo'
   | 'lastVisitedAtByWorktreeId'
-  | 'explicitlySleptChatsByWorkspace'
   | 'defaultTerminalTabsAppliedByWorktreeId'
   | 'closedTerminalTabTombstonesByTabId'
   | 'automaticAgentResumeClaimsByTabId'
@@ -166,8 +165,6 @@ export function targetScopedWorkspaceHydrationPatch(
       hydrated.lastVisitedAtByWorktreeId,
       workspaceKeys
     ),
-    // Client-only global intent is loaded once from the local desktop, never from a host pull.
-    explicitlySleptChatsByWorkspace: state.explicitlySleptChatsByWorkspace,
     // Why local marks win: the applied mark is write-once.
     defaultTerminalTabsAppliedByWorktreeId: {
       ...replaceHydratedRecordKeys(

@@ -76,7 +76,7 @@ export function useVisibleSidebarWorktrees(args: {
     getStructuredChatWorktreeIds(
       showSleepingWorkspaces,
       s.unifiedTabsByWorktree,
-      s.explicitlySleptChatsByWorkspace
+      s.structuredChatSleptAtByPaneKey
     )
   )
 

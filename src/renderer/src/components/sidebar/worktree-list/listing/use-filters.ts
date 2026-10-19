@@ -116,7 +116,7 @@ const REVEAL_WORKSPACE: Record<keyof WorkspaceRowFilters, (context: RevealContex
         liveAgentWorktrees,
         getWorktreeIdsWithStructuredChat(
           state.unifiedTabsByWorktree,
-          state.explicitlySleptChatsByWorkspace
+          state.structuredChatSleptAtByPaneKey
         )
       )
     ) {

@@ -69,8 +69,8 @@ export function useWorktreeJumpPaletteStoreState({
   const browserTabsByWorktree = useAppStore((state) => state.browserTabsByWorktree)
   const browserPagesByWorkspace = useAppStore((state) => state.browserPagesByWorkspace)
   const unifiedTabsByWorktree = useAppStore((state) => state.unifiedTabsByWorktree)
-  const explicitlySleptChatsByWorkspace = useAppStore(
-    (state) => state.explicitlySleptChatsByWorkspace
+  const structuredChatSleptAtByPaneKey = useAppStore(
+    (state) => state.structuredChatSleptAtByPaneKey
   )
   const paletteIndexStatus = useMemo(
     () => selectPaletteIndexStatusSnapshot(useAppStore.getState(), paletteStatusInputsActive),
@@ -164,7 +164,7 @@ export function useWorktreeJumpPaletteStoreState({
     browserTabsByWorktree,
     browserPagesByWorkspace,
     unifiedTabsByWorktree,
-    explicitlySleptChatsByWorkspace,
+    structuredChatSleptAtByPaneKey,
     agentStatusByPaneKey,
     runtimePaneTitlesByTabId,
     unreadTerminalTabs,

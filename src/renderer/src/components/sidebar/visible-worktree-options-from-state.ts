@@ -33,7 +33,7 @@ export function buildVisibleWorktreeOptionsFromState(
     ),
     worktreeIdsWithStructuredChat: getWorktreeIdsWithStructuredChat(
       state.unifiedTabsByWorktree,
-      state.explicitlySleptChatsByWorkspace
+      state.structuredChatSleptAtByPaneKey
     ),
     hideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace,
     hideAutomationGeneratedWorkspaces: state.hideAutomationGeneratedWorkspaces,

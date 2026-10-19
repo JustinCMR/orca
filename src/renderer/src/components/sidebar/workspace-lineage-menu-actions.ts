@@ -6,9 +6,9 @@ import type { Tab } from '../../../../shared/tab-types'
 import { isStructuredTab } from '../../../../shared/structured-agent-session-tab'
 import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
 import {
-  isChatExplicitlySlept,
-  type ExplicitlySleptChatsByWorkspace
-} from '../../../../shared/workspace-chat-sleep'
+  isStructuredChatSlept,
+  type StructuredChatSleptAtByPaneKey
+} from '@/store/slices/structured-chat-slept-at'
 import { getWorkspaceDeleteLineage } from './workspace-delete-lineage'
 
 type WorkspaceActivityMaps = {
@@ -17,7 +17,7 @@ type WorkspaceActivityMaps = {
   browserTabsByWorktree: Record<string, { id: string }[]>
   unifiedTabsByWorktree: Record<string, Tab[]>
   agentStatusByPaneKey: Record<string, { structuredHostOwned?: true }>
-  explicitlySleptChatsByWorkspace: ExplicitlySleptChatsByWorkspace
+  structuredChatSleptAtByPaneKey: StructuredChatSleptAtByPaneKey
 }
 
 export type WorkspaceLineageMenuActions = {
@@ -34,15 +34,15 @@ export function hasSleepableWorkspaceActivity(
   return (
     tabs.some((tab) => tabHasLivePty(activity.ptyIdsByTabId, tab.id)) ||
     (activity.browserTabsByWorktree[worktreeId] ?? []).length > 0 ||
-    // A chat counts while its host holds its process, or until an explicit Sleep records it
-    // stopped, so an idle-ended chat can still be slept (and hidden) on purpose.
+    // A chat counts while its host holds its process, or until its host marks it slept, so an
+    // idle-ended chat can still be slept (and hidden) on purpose.
     (activity.unifiedTabsByWorktree[worktreeId] ?? []).some(
       (tab) =>
         isStructuredTab(tab) &&
         (activity.agentStatusByPaneKey[structuredAgentSessionPaneKey(tab.id, tab.entityId)]
           ?.structuredHostOwned === true ||
           (!!tab.executionHostId &&
-            !isChatExplicitlySlept(activity.explicitlySleptChatsByWorkspace, tab)))
+            !isStructuredChatSlept(activity.structuredChatSleptAtByPaneKey, tab)))
     )
   )
 }
@@ -80,7 +80,7 @@ export function useWorkspaceLineageMenuActions(
     browserTabsByWorktree,
     unifiedTabsByWorktree,
     agentStatusByPaneKey,
-    explicitlySleptChatsByWorkspace
+    structuredChatSleptAtByPaneKey
   } = activity
   return useMemo(
     () =>
@@ -95,7 +95,7 @@ export function useWorkspaceLineageMenuActions(
               browserTabsByWorktree,
               unifiedTabsByWorktree,
               agentStatusByPaneKey,
-              explicitlySleptChatsByWorkspace
+              structuredChatSleptAtByPaneKey
             }
           })
         : EMPTY_LINEAGE_MENU_ACTIONS,
@@ -103,7 +103,7 @@ export function useWorkspaceLineageMenuActions(
       agentStatusByPaneKey,
       browserTabsByWorktree,
       enabled,
-      explicitlySleptChatsByWorkspace,
+      structuredChatSleptAtByPaneKey,
       lineageById,
       parent,
       ptyIdsByTabId,

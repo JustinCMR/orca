@@ -3,7 +3,6 @@ import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { WorktreeSlice } from './worktree-helpers'
 import { worktreeSliceInitialState } from './worktrees/session/worktree-slice-initial-state'
-import { createWorkspaceChatSleepActions } from './worktrees/session/workspace-chat-sleep'
 import { createFetchDetectedWorktrees } from './worktrees/listing/fetch-detected-worktrees'
 import { createFetchWorktrees } from './worktrees/listing/fetch-worktrees'
 import { createFetchAllWorktrees } from './worktrees/listing/fetch-all-worktrees'
@@ -71,7 +70,6 @@ export { resetAuthoritativelyRemovedWorktreeMemoryForTests } from './worktrees/l
 
 export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> = (set, get) => ({
   ...worktreeSliceInitialState,
-  ...createWorkspaceChatSleepActions(set),
   fetchDetectedWorktrees: createFetchDetectedWorktrees(set, get),
   fetchWorktrees: createFetchWorktrees(set, get),
   fetchAllWorktrees: createFetchAllWorktrees(set, get),

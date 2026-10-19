@@ -4,7 +4,7 @@ import { getWorktreeIdsWithLiveAgent, isInactiveWorkspace } from '@/lib/worktree
 import { getWorktreeIdsWithStructuredChat } from './visible-worktree-activity-inputs'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import type { Tab } from '../../../../shared/tab-types'
-import type { ExplicitlySleptChatsByWorkspace } from '../../../../shared/workspace-chat-sleep'
+import type { StructuredChatSleptAtByPaneKey } from '@/store/slices/structured-chat-slept-at'
 
 type TabLike = { id: string }
 
@@ -17,7 +17,7 @@ type SleepStateInput = {
   ptyIdsByTabId?: Record<string, string[]> | null
   browserTabsByWorktree?: Record<string, readonly TabLike[]> | null
   unifiedTabsByWorktree?: Record<string, Tab[]> | null
-  explicitlySleptChatsByWorkspace?: ExplicitlySleptChatsByWorkspace
+  structuredChatSleptAtByPaneKey?: StructuredChatSleptAtByPaneKey
 }
 
 type LiveAgentGeneration = {
@@ -78,7 +78,7 @@ export function selectIsSleepingWorktree(state: SleepStateInput, worktreeId: str
     selectWorktreeIdsWithLiveAgent(state),
     getWorktreeIdsWithStructuredChat(
       state.unifiedTabsByWorktree,
-      state.explicitlySleptChatsByWorkspace
+      state.structuredChatSleptAtByPaneKey
     )
   )
 }

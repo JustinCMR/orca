@@ -56,7 +56,7 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
     getStructuredChatWorktreeIds(
       showSleepingWorkspaces,
       s.unifiedTabsByWorktree,
-      s.explicitlySleptChatsByWorkspace
+      s.structuredChatSleptAtByPaneKey
     )
   )
   const agentStatusEpoch = useAppStore((s) => (!showSleepingWorkspaces ? s.agentStatusEpoch : 0))

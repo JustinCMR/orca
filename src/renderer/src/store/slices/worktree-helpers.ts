@@ -44,10 +44,6 @@ import type {
   WorktreeCreationPhase
 } from '@/lib/pending-worktree-creation'
 import type { AppState } from '../types'
-import type {
-  ExplicitlySleptChatsByWorkspace,
-  SleptChatIdentity
-} from '../../../../shared/workspace-chat-sleep'
 import type { WorktreeRefreshAllOptions } from './worktree-refresh-options'
 export type { WorktreePurgeTarget, WorktreePurgeTargets } from './worktree-purge-target'
 import type { WorktreePurgeTargets } from './worktree-purge-target'
@@ -110,17 +106,6 @@ export type WorktreeSlice = {
   activeWorktreeId: string | null
   activeWorkspaceKey: WorkspaceKey | null
   activeWorkspaceExecutionHostId: ExecutionHostId | null
-  explicitlySleptChatsByWorkspace: ExplicitlySleptChatsByWorkspace
-  markWorkspaceChatsSlept: (
-    worktreeId: string,
-    hostId: ExecutionHostId,
-    chats: readonly SleptChatIdentity[]
-  ) => void
-  /** Without a scope, clears the workspace's record on every host. */
-  clearWorkspaceChatsSlept: (
-    worktreeId: string,
-    scope?: { hostId: ExecutionHostId; chats: readonly SleptChatIdentity[] }
-  ) => void
   /**
    * In-flight / failed background worktree creations, keyed by a renderer
    * `creationId`. Kept separate from `worktreesByRepo` on purpose — a real

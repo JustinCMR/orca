@@ -192,9 +192,6 @@ export function buildWorkspaceSessionPatch(
   if (changed.has('lastVisitedAtByWorktreeId')) {
     patch.lastVisitedAtByWorktreeId = buildLastVisitedAtByWorktreeId(snapshot)
   }
-  if (changed.has('explicitlySleptChatsByWorkspace')) {
-    patch.explicitlySleptChatsByWorkspace = snapshot.explicitlySleptChatsByWorkspace ?? {}
-  }
   if (changed.has('defaultTerminalTabsAppliedByWorktreeId')) {
     patch.defaultTerminalTabsAppliedByWorktreeId =
       snapshot.defaultTerminalTabsAppliedByWorktreeId &&

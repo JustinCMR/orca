@@ -7,7 +7,6 @@ import { forgetAmbiguousOwnerWarnings } from '@/lib/ambiguous-owner-warning'
 import { omitRecordKeys } from './record-key-omission'
 import { removeWorktreeLayout } from '../../tabs/worktree-layout-lifecycle'
 import { omitSleepingAgentSessionsForWorktrees } from './sleeping-agent-session-omission'
-import { withoutSleptChatsForWorkspaces } from '../../../../../../shared/workspace-chat-sleep'
 
 /** Clears worktree-owned renderer state after successful removal so a reused identity cannot inherit stale preferences. */
 export function applyRemoveWorktreeSuccessState(
@@ -89,10 +88,6 @@ export function applyRemoveWorktreeSuccessState(
       recentlyClosedBrowserTabsByWorktree: omitByWorktree(s.recentlyClosedBrowserTabsByWorktree),
       rightSidebarExplorerViewByWorktree: omitByWorktree(s.rightSidebarExplorerViewByWorktree),
       pendingReconnectTabByWorktree: omitByWorktree(s.pendingReconnectTabByWorktree),
-      explicitlySleptChatsByWorkspace: withoutSleptChatsForWorkspaces(
-        s.explicitlySleptChatsByWorkspace,
-        [{ id: worktreeId, hostId: executionHostId }]
-      ),
       editorDrafts: omitByFileId(s.editorDrafts),
       markdownViewMode: omitByFileId(s.markdownViewMode),
       markdownRichModeSizeOverride: omitByFileId(s.markdownRichModeSizeOverride),

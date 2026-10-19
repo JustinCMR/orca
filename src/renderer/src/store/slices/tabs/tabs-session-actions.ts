@@ -11,7 +11,6 @@ import { projectWorktreeTabModelReconciliation } from './tabs-reconciliation'
 import { createWorktreeTabModelReconciliationBatch } from './tabs-reconciliation-batch'
 import type { AppState } from '../../types'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../../shared/layout-owner-switch'
-import { withoutReplacedSleptChats } from '../../../../../shared/workspace-chat-sleep'
 
 function replaceWorkspaceRecordKeys<T>(
   current: Record<string, T>,
@@ -94,46 +93,32 @@ export function createTabsSessionActions(
       addAdditionalValidWorkspaceKeys(validWorktreeIds, options)
       const hydrated = buildHydratedTabState(session, validWorktreeIds)
       if (!options?.replaceWorkspaceKeys) {
-        set((current) => {
-          let intents = current.explicitlySleptChatsByWorkspace
-          for (const worktreeId of Object.keys(hydrated.unifiedTabsByWorktree)) {
-            intents = withoutReplacedSleptChats(intents, hydrated.unifiedTabsByWorktree, worktreeId)
-          }
-          return { ...hydrated, explicitlySleptChatsByWorkspace: intents }
-        })
+        set(hydrated)
         return
       }
       const replaceWorkspaceKeys = new Set(options.replaceWorkspaceKeys)
-      set((current) => {
-        const unifiedTabsByWorktree = replaceWorkspaceRecordKeys(
+      set((current) => ({
+        unifiedTabsByWorktree: replaceWorkspaceRecordKeys(
           current.unifiedTabsByWorktree,
           hydrated.unifiedTabsByWorktree,
           replaceWorkspaceKeys
+        ),
+        groupsByWorktree: replaceWorkspaceRecordKeys(
+          current.groupsByWorktree,
+          hydrated.groupsByWorktree,
+          replaceWorkspaceKeys
+        ),
+        activeGroupIdByWorktree: replaceWorkspaceRecordKeys(
+          current.activeGroupIdByWorktree,
+          hydrated.activeGroupIdByWorktree,
+          replaceWorkspaceKeys
+        ),
+        layoutByWorktree: replaceWorkspaceRecordKeys(
+          current.layoutByWorktree,
+          hydrated.layoutByWorktree,
+          replaceWorkspaceKeys
         )
-        let intents = current.explicitlySleptChatsByWorkspace
-        for (const worktreeId of replaceWorkspaceKeys) {
-          intents = withoutReplacedSleptChats(intents, unifiedTabsByWorktree, worktreeId)
-        }
-        return {
-          unifiedTabsByWorktree,
-          explicitlySleptChatsByWorkspace: intents,
-          groupsByWorktree: replaceWorkspaceRecordKeys(
-            current.groupsByWorktree,
-            hydrated.groupsByWorktree,
-            replaceWorkspaceKeys
-          ),
-          activeGroupIdByWorktree: replaceWorkspaceRecordKeys(
-            current.activeGroupIdByWorktree,
-            hydrated.activeGroupIdByWorktree,
-            replaceWorkspaceKeys
-          ),
-          layoutByWorktree: replaceWorkspaceRecordKeys(
-            current.layoutByWorktree,
-            hydrated.layoutByWorktree,
-            replaceWorkspaceKeys
-          )
-        }
-      })
+      }))
     }
   }
 }

@@ -11,7 +11,6 @@ import { omitRecordKeys } from './record-key-omission'
 import { removeWorktreeVisitEntriesForTargets } from '@/lib/worktree-visit-recency'
 import { forgetAmbiguousOwnerWarnings } from '@/lib/ambiguous-owner-warning'
 import { forgetWorktreeSleepIntent } from '@/lib/worktree-sleep-intent'
-import { withoutSleptChatsForWorkspaces } from '../../../../../../shared/workspace-chat-sleep'
 import { removeWorktreeLayout } from '../../tabs/worktree-layout-lifecycle'
 import {
   cancelStructuredLaunchesForWorktrees,
@@ -60,10 +59,6 @@ export function buildWorktreePurgeState(
     deleteStateByWorktreeId: omitRecordKeys(
       next.deleteStateByWorktreeId,
       hostKeys.map((target) => composeWorktreeHostIdentity(target.hostId, target.id))
-    ),
-    explicitlySleptChatsByWorkspace: withoutSleptChatsForWorkspaces(
-      next.explicitlySleptChatsByWorkspace,
-      hostKeys
     )
   }
 }
@@ -157,10 +152,6 @@ export function buildFullWorktreePurgeState(
     pendingReconnectTabByWorktree: omitByWorktree(s.pendingReconnectTabByWorktree),
     rightSidebarTabByWorktree: pruneRightSidebarTabByWorktree(),
     rightSidebarExplorerViewByWorktree: omitByWorktree(s.rightSidebarExplorerViewByWorktree ?? {}),
-    explicitlySleptChatsByWorkspace: withoutSleptChatsForWorkspaces(
-      s.explicitlySleptChatsByWorkspace,
-      [...worktreeIdSet].map((id) => ({ id }))
-    ),
     // Git status caches
     gitStatusByWorktree: omitByWorktree(s.gitStatusByWorktree),
     // Why: keyed by worktreeId; re-keyed on rename but missed by both removal paths (upstream-status entry).

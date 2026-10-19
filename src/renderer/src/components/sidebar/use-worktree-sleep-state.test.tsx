@@ -9,6 +9,7 @@ import {
   useIsSleepingWorktree,
   resetWorktreeSleepStateCacheForTests
 } from './use-worktree-sleep-state'
+import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
 
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -16,7 +17,7 @@ type MockState = {
   tabsByWorktree: Record<string, TerminalTab[]>
   browserTabsByWorktree: Record<string, { id: string }[]>
   unifiedTabsByWorktree: Record<string, Tab[]>
-  explicitlySleptChatsByWorkspace: Record<string, { tabId: string; sessionId: string }[]>
+  structuredChatSleptAtByPaneKey: Record<string, number>
   ptyIdsByTabId: Record<string, string[]>
   agentStatusEpoch: number
   agentStatusByPaneKey: Record<string, AgentStatusEntry>
@@ -97,7 +98,7 @@ describe('useIsSleepingWorktree', () => {
       tabsByWorktree: {},
       browserTabsByWorktree: {},
       unifiedTabsByWorktree: {},
-      explicitlySleptChatsByWorkspace: {},
+      structuredChatSleptAtByPaneKey: {},
       ptyIdsByTabId: {},
       agentStatusEpoch: 0,
       agentStatusByPaneKey: {},
@@ -161,34 +162,24 @@ describe('useIsSleepingWorktree', () => {
     expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>false</span>')
   })
 
-  it('reads a slept chat as asleep until its agent runs again', () => {
+  it('reads a chat its host marked slept as asleep, and awake once the mark goes', () => {
     const worktreeId = 'repo1::/path/wt1'
-    const paneKey = makePaneKey('chat-1', LEAF_ID)
     const chat = makeUnifiedTab({
       id: 'chat-1',
       worktreeId,
       contentType: 'agent-session',
       agentSessionAgent: 'claude'
     })
-    chat.executionHostId = 'local'
-    const doneRow = makeAgentStatusEntry({ paneKey, state: 'done', worktreeId })
+    const chatKey = structuredAgentSessionPaneKey(chat.id, chat.entityId)
     mockState = {
       ...mockState,
       unifiedTabsByWorktree: { [worktreeId]: [chat] },
-      explicitlySleptChatsByWorkspace: {
-        [`local|${worktreeId}`]: [{ tabId: chat.id, sessionId: chat.entityId }]
-      },
-      agentStatusByPaneKey: { [paneKey]: doneRow }
+      structuredChatSleptAtByPaneKey: { [chatKey]: 1 }
     }
     expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>true</span>')
 
-    // A send from another client starts the agent; its turn ends but the process lives on.
-    mockState = {
-      ...mockState,
-      agentStatusByPaneKey: {
-        [paneKey]: { ...doneRow, tabId: 'chat-1', structuredHostOwned: true }
-      }
-    }
+    // A send from any client clears the host's mark, and the bridge drops its copy.
+    mockState = { ...mockState, structuredChatSleptAtByPaneKey: {} }
     expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>false</span>')
   })
 

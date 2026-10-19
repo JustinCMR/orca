@@ -63,10 +63,9 @@ describe('deleting a workspace owner session fields', () => {
     ])
   })
 
-  // Why not in the list above: these maps also hold host-qualified keys, so they are scanned rather
+  // Why not in the list above: this map also holds host-qualified keys, so it is scanned rather
   // than indexed by the owner key, and the scan is the only thing that reaches a remote row.
-  it('deletes recency and explicit chat Sleep entries under bare and host-qualified keys alike', () => {
-    const slept = [{ tabId: 'chat-1', sessionId: 'session-1' }]
+  it('deletes the recency entry under a bare and a host-qualified key alike', () => {
     const session: WorkspaceSessionState = {
       ...getDefaultWorkspaceSession(),
       lastVisitedAtByWorktreeId: {
@@ -74,11 +73,6 @@ describe('deleting a workspace owner session fields', () => {
         [`ssh:user@host|${REMOVED_OWNER_KEY}`]: 2,
         [RETAINED_OWNER_KEY]: 3,
         [`ssh:user@host|${RETAINED_OWNER_KEY}`]: 4
-      },
-      explicitlySleptChatsByWorkspace: {
-        [`local|${REMOVED_OWNER_KEY}`]: slept,
-        [`ssh:user@host|${REMOVED_OWNER_KEY}`]: slept,
-        [`local|${RETAINED_OWNER_KEY}`]: slept
       }
     }
 
@@ -87,9 +81,6 @@ describe('deleting a workspace owner session fields', () => {
     expect(session.lastVisitedAtByWorktreeId).toEqual({
       [RETAINED_OWNER_KEY]: 3,
       [`ssh:user@host|${RETAINED_OWNER_KEY}`]: 4
-    })
-    expect(session.explicitlySleptChatsByWorkspace).toEqual({
-      [`local|${RETAINED_OWNER_KEY}`]: slept
     })
   })
 })

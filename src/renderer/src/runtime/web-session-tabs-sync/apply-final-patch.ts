@@ -7,7 +7,6 @@ import {
   buildRetractedMirroredTabSweepPatch
 } from './agent-status-primitives'
 import { isWebSessionTabsWorktreeRemovalFrame } from './session-tabs-inventory-absence'
-import { withoutReplacedSleptChats } from '../../../../shared/workspace-chat-sleep'
 
 type FinalPatchContext = ReturnType<typeof applyActiveStateUpdates>
 
@@ -91,11 +90,6 @@ export function buildWebSessionTabsFinalPatch(
       state.recentlyClosedAgentStatusTabIds,
     mirroredTerminalIds
   )
-  const nextSleptChats = withoutReplacedSleptChats(
-    state.explicitlySleptChatsByWorkspace ?? {},
-    nextUnifiedTabsByWorktree,
-    worktreeId
-  )
 
   const patch: Partial<WebSessionTabsSyncState> = {
     ...agentStatusPatch,
@@ -108,10 +102,6 @@ export function buildWebSessionTabsFinalPatch(
       : {}),
     ...(nextUnifiedTabsByWorktree !== state.unifiedTabsByWorktree
       ? { unifiedTabsByWorktree: nextUnifiedTabsByWorktree }
-      : {}),
-    ...(state.explicitlySleptChatsByWorkspace &&
-    nextSleptChats !== state.explicitlySleptChatsByWorkspace
-      ? { explicitlySleptChatsByWorkspace: nextSleptChats }
       : {}),
     ...(nextGroupsByWorktree !== state.groupsByWorktree
       ? { groupsByWorktree: nextGroupsByWorktree }

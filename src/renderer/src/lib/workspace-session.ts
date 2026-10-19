@@ -59,7 +59,6 @@ export type WorkspaceSessionSnapshot = Pick<
   | 'defaultTerminalTabsAppliedByWorktreeId'
 > & {
   activeWorkspaceExecutionHostId?: AppState['activeWorkspaceExecutionHostId']
-  explicitlySleptChatsByWorkspace?: AppState['explicitlySleptChatsByWorkspace']
   sleepingAgentSessionsByPaneKey?: AppState['sleepingAgentSessionsByPaneKey']
   clientHostedBrowserCloseIntentsByEnvironment?: AppState['clientHostedBrowserCloseIntentsByEnvironment']
   /** Optional so the many partial snapshot fixtures keep type-checking; see buildTerminalSessionData. */
@@ -99,7 +98,6 @@ export const SESSION_RELEVANT_FIELDS = [
   'worktreesByRepo',
   'lastKnownRelayPtyIdByTabId',
   'lastVisitedAtByWorktreeId',
-  'explicitlySleptChatsByWorkspace',
   'defaultTerminalTabsAppliedByWorktreeId',
   'sleepingAgentSessionsByPaneKey',
   'clientHostedBrowserCloseIntentsByEnvironment',
@@ -266,7 +264,7 @@ export function buildTerminalSessionData(
 
   // Why: derive here to avoid a fragile sync IPC round-trip during beforeunload (Chromium can drop it under shutdown pressure).
   // Why: pre-indexed above so large workspaces don't rescan every repo/worktree per terminal tab while the renderer is quitting.
-  const remoteSessions: Record<string, string> = {}
+  const remoteSessionIdsByTabId: Record<string, string> = {}
   for (const [worktreeId, tabs] of Object.entries(tabsByWorktree)) {
     const worktree = worktreeById.get(worktreeId)
     const repo = worktree ? repoById.get(worktree.repoId) : null
@@ -279,14 +277,15 @@ export function buildTerminalSessionData(
       }
       const sessionId = tab.ptyId || restoredSessionId(tab.id)
       if (sessionId) {
-        remoteSessions[tab.id] = sessionId
+        remoteSessionIdsByTabId[tab.id] = sessionId
       }
     }
   }
 
   return {
     activeWorktreeIdsOnShutdown,
-    remoteSessionIdsByTabId: Object.keys(remoteSessions).length ? remoteSessions : undefined
+    remoteSessionIdsByTabId:
+      Object.keys(remoteSessionIdsByTabId).length > 0 ? remoteSessionIdsByTabId : undefined
   }
 }
 
@@ -333,9 +332,9 @@ export function buildWorkspaceSessionPayload(
     remoteSessionIdsByTabId: terminalSessionData.remoteSessionIdsByTabId,
     // Why: omit when empty so builds that never stamped focus-recency don't bloat the payload. See docs/cmd-j-empty-query-ordering.md.
     lastVisitedAtByWorktreeId: buildLastVisitedAtByWorktreeId(snapshot),
-    explicitlySleptChatsByWorkspace: snapshot.explicitlySleptChatsByWorkspace ?? {},
     defaultTerminalTabsAppliedByWorktreeId:
-      Object.keys(snapshot.defaultTerminalTabsAppliedByWorktreeId ?? {}).length > 0
+      snapshot.defaultTerminalTabsAppliedByWorktreeId &&
+      Object.keys(snapshot.defaultTerminalTabsAppliedByWorktreeId).length > 0
         ? snapshot.defaultTerminalTabsAppliedByWorktreeId
         : undefined,
     ...buildSleepingAgentSessionData(snapshot),
