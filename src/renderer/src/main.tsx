@@ -15,7 +15,11 @@ import {
   recordRendererCrashBreadcrumb
 } from './lib/crash-diagnostics'
 import { installAutomationHostDiagnostic } from './components/automations/automation-host-diagnostics'
-import { applyDocumentTheme } from './lib/document-theme'
+import {
+  applyCachedPluginAppTheme,
+  applyDocumentTheme,
+  readCachedPluginAppTheme
+} from './lib/document-theme'
 import { installTypingLatencyDiagnostic } from './lib/typing-latency/diagnostic'
 import { shouldEnableReactGrab } from './lib/react-grab-dev-gate'
 import { I18nProvider } from './i18n/I18nProvider'
@@ -44,7 +48,11 @@ if (
   void import('react-grab/styles.css')
 }
 
-applyDocumentTheme('system', { disableTransitions: false })
+const cachedPluginTheme = readCachedPluginAppTheme()
+applyDocumentTheme(cachedPluginTheme?.base ?? 'system', { disableTransitions: false })
+if (cachedPluginTheme) {
+  applyCachedPluginAppTheme(cachedPluginTheme)
+}
 const browserClientPageRenderer = installBrowserClientPageRenderer()
 import.meta.hot?.dispose(() => browserClientPageRenderer?.dispose())
 
