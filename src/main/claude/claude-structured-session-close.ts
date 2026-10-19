@@ -292,6 +292,10 @@ export async function closeClaudeSession(input: {
     )
     // Why: cancellation must preserve the same actionable verdict as published-session close.
     if (!(cleanupError instanceof AgentSessionAcquisitionExitUnprovenError)) {
+      // A proved-dead attempt cannot remain the owner blocking the next start.
+      if (attempt) {
+        input.acquisitions.deleteIfCurrent(input.sessionId, attempt)
+      }
       throw cleanupError
     }
     return false

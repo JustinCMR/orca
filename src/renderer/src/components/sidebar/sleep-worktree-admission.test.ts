@@ -133,7 +133,7 @@ it('keeps the real chat-only twin refusal after synchronous browser cleanup', as
     seedStore(store, {
       worktreesByRepo: {
         repo1: [
-          makeWorktree({ id: ids[0], hostId: 'local' }),
+          makeWorktree({ id: ids[0], repoId: 'repo1', hostId: 'local' }),
           makeRuntimeOwnedWorktree(
             { id: ids[0], repoId: 'repo1', hostId: 'runtime:env-a' },
             'env-a'

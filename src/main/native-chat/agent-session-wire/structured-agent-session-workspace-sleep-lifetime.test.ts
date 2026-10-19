@@ -66,7 +66,7 @@ it('omits an unverified stop superseded by a newer send while retaining a siblin
   expect(await sleeping).toEqual({ stoppedSessionIds: [sibling] })
 })
 
-it.each(['persist', 'root-exit', 'retry', 'successor'] as const)(
+it.each(['persist', 'root-exit', 'retry', 'successor', 'root-successor'] as const)(
   'retains failed-acquisition exit proof across %s',
   async (mode) => {
     const { host: original, store, root } = hostTestState()
@@ -98,8 +98,8 @@ it.each(['persist', 'root-exit', 'retry', 'successor'] as const)(
     expect(router.hasOwnedAcquisition('session-alpha')).toBe(true)
     expect(store.getRecord('session-alpha')?.lease.deathEvidence).toBeNull()
     const connection = claude.connections[0]
-    connection.close = vi.fn(async () => mode !== 'root-exit')
-    if (mode === 'root-exit') {
+    connection.close = vi.fn(async () => mode !== 'root-exit' && mode !== 'root-successor')
+    if (mode === 'root-exit' || mode === 'root-successor') {
       connection.exitVerdict = { root: 'exited', tree: 'unverifiable' }
     }
     if (mode === 'retry' || mode === 'successor') {
@@ -112,12 +112,18 @@ it.each(['persist', 'root-exit', 'retry', 'successor'] as const)(
       expect(store.getRecord('session-alpha')?.lease.deathEvidence).toBeNull()
       expect(router.stoppedAcquisition('session-alpha')).toBeDefined()
     }
-    if (mode === 'successor') {
+    if (mode === 'successor' || mode === 'root-successor') {
       const body = hostTestMessage('send after failed exit bookkeeping')
       expect(
         await host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
       ).toMatchObject({ ok: true })
-      await vi.waitFor(() => expect(claude.connections).toHaveLength(2))
+      await vi
+        .waitFor(() => expect(claude.connections).toHaveLength(2))
+        .finally(() => {
+          for (const opened of claude.connections) {
+            opened.close = async () => true
+          }
+        })
       claude.connections[1].close = async () => true
       expect(router.stoppedAcquisition('session-alpha')).toBeUndefined()
       expect(store.getRecord('session-alpha')?.lease.deathEvidence).toBeNull()
