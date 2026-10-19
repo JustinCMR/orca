@@ -110,9 +110,18 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     if (servedBy) {
       // A pane of a paired server that predates the turn-end stamp (it advertises no capability).
       const ptyId = `remote:${servedBy}@@pty-1`
-      mockStoreState.ptyIdsByTabId['tab-1'] = [ptyId]
-      mockStoreState.terminalLayoutsByTabId['tab-1'].ptyIdsByLeafId = { [LEAF_1]: ptyId }
-      mockStoreState.runtimeStatusByEnvironmentId.set(servedBy, { status: { capabilities: [] } })
+      const layout = mockStoreState.terminalLayoutsByTabId?.['tab-1']
+      if (!layout) {
+        throw new Error('Expected the pane layout')
+      }
+      mockStoreState.ptyIdsByTabId = { 'tab-1': [ptyId] }
+      mockStoreState.terminalLayoutsByTabId = {
+        'tab-1': { ...layout, ptyIdsByLeafId: { [LEAF_1]: ptyId } }
+      }
+      mockStoreState.runtimeStatusByEnvironmentId.set(servedBy, {
+        checkedAt: Date.now(),
+        status: { capabilities: [] }
+      })
     }
 
     // Stand in for the transport's title tracker: every title, plus its working/idle edge.
