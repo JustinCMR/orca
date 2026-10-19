@@ -624,4 +624,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   for (const [name, value] of Object.entries(classification)) {
     process.stdout.write(`${name}=${value ? 'true' : 'false'}\n`)
   }
+  // This release line runs main's pr.yml, whose gate needs an answer for a job this line never runs.
+  process.stdout.write('dependency_isolation=false\n')
 }
