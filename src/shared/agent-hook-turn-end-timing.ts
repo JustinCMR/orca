@@ -2,6 +2,7 @@ import type { AgentHookEventPayload, HostTurnRecord } from './agent-hook-listene
 import { isNewTurnEvent, isTurnEndEvent } from './agent-hook-listener/provider-event-routing'
 import { readString } from './agent-hook-listener/tool-input-preview'
 import type { AgentHookSource } from './agent-hook-relay'
+import { agentMainAgentVerdict } from './agent-main-agent-verdict'
 import { agentReportsStopHookContinuation } from './agent-stop-hook-continuation'
 import { pickHostTurnEnd, type HostTurnEndFacts } from './agent-status-types'
 
@@ -115,6 +116,16 @@ export function reduceHostTurnEnd(
     event.payload.sessionBoundary === true ||
     !isTurnEndEvent(source, event.hookEventName)
   ) {
+    // Why: a settled cancellation ends the open turn, so that turn's late Stop is a repeat, not an end.
+    if (
+      record &&
+      isLiveRoot &&
+      record.completed?.turnKey !== record.currentTurnKey &&
+      agentMainAgentVerdict(event.payload) === 'cancellation'
+    ) {
+      const completed = { turnKey: record.currentTurnKey, endedAt: at }
+      return { ...shown, hostTurn: { ...record, completed } }
+    }
     return { ...shown, ...kept }
   }
   const completed = record.completed

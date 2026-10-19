@@ -59,6 +59,28 @@ describe('the host-stamped turn end', () => {
     await post({ hook_event_name: 'Stop', last_assistant_message: 'Second.' })
     expect(row()).toMatchObject({ state: 'done', turnEndDisposition: 'ambiguous' })
     expect(row()).not.toHaveProperty('turnEndedAt')
+
+    // A cancel Orca inferred from Ctrl+C ends the turn, so the turn's late Stop is no second end.
+    await post({ hook_event_name: 'UserPromptSubmit', prompt: 'Fix it' })
+    const working = row()!
+    expect(
+      server.inferInterrupt({
+        paneKey: PANE,
+        baselineUpdatedAt: working.receivedAt,
+        baselineStateStartedAt: working.stateStartedAt,
+        baselinePrompt: working.prompt,
+        baselineAgentType: 'claude',
+        intent: 'ctrl-c'
+      })
+    ).toBe(true)
+    const cancelled = row()
+    await post({ hook_event_name: 'Stop', last_assistant_message: 'Fixed.' })
+    expect(row()).toMatchObject({
+      state: 'done',
+      stateStartedAt: cancelled?.stateStartedAt,
+      turnEndDisposition: 'ambiguous'
+    })
+    expect(row()).not.toHaveProperty('turnEndedAt')
   })
 
   it('keeps a Grok end across a session reset and the idle reminder that follows it', async () => {
