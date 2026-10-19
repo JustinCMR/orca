@@ -9,7 +9,7 @@ import {
 import { translate } from '@/i18n/i18n'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
 import { preserveSidebarWorktreePosition } from './sleep-worktree-sidebar-position'
-import { stopWorkspaceChats } from './sleep-workspace-chat-stop'
+import { stopWorkspaceChats, type WorkspaceChatStop } from './sleep-workspace-chat-stop'
 
 /** One per host asked to stop the workspace's chats. */
 export type WorkspaceSleepResult = {
@@ -138,64 +138,63 @@ export async function sleepWorktreesReportingFailures(
   const failedWorktreeIds = new Set<string>()
   // Why apart from failedWorktreeIds: stopped terminals stay stopped when only a chat stop fails.
   const chatFailedIds = new Set<string>()
-  const results: WorkspaceSleepResult[] = []
-  try {
-    for (const worktreeId of worktreeIds) {
-      // Why: the marker outlives teardown so the panes left mounted stay cold
-      // until an explicit wake (#10205); mark per workspace so an earlier
-      // slow teardown never leaves a later, still-awake one marked.
-      markWorktreeSleepIntent(worktreeId)
-      try {
-        // Why: sleep mirrors removeWorktree's shutdown sequence — browsers first
-        // so destroyPersistentWebview unregisters the Chromium guests before any
-        // other teardown runs, terminals second so the PTY kill uses the same
-        // ordering on both paths. Without the browser thunk here, sleep leaks
-        // browserPagesByWorkspace entries and live webviews for the slept worktree.
-        await withWorktreeSleepTeardown(worktreeId, () => shutdownWorktreeBrowsers(worktreeId))
-      } catch (err) {
-        console.error('[sleep-worktree] browser shutdown failed', { worktreeId, error: err })
-        failedWorktreeIds.add(worktreeId)
-        errors.push(describeSleepFailure(err))
-        continue
-      }
-      try {
-        // Why: sleep is reversible — the tab record stays in tabsByWorktree, the
-        // layout stays in terminalLayoutsByTabId, only the live PTY processes are
-        // released. keepIdentifiers preserves tab.ptyId / ptyIdsByLeafId /
-        // lastKnownRelayPtyIdByTabId so wake re-spawns against the same on-disk
-        // history dir (local) or relay session id (SSH); it also captures
-        // serializer buffers into buffersByLeafId for SSH wake to reseed
-        // scrollback. See DESIGN_DOC_TERMINAL_HISTORY_FIX_V2.md §3.3.c.
-        await withWorktreeSleepTeardown(worktreeId, async () => {
-          await shutdownWorktreeTerminals(worktreeId, { keepIdentifiers: true })
-          if (typeof window !== 'undefined' && window.api?.ephemeralVm?.suspendWorkspace) {
-            await window.api.ephemeralVm.suspendWorkspace({ workspaceId: worktreeId })
-          }
-        })
-        // Why: a workspace the user activated during the batch is awake by their choice.
+  const attempts = worktreeIds.map((worktreeId) => {
+    markWorktreeSleepIntent(worktreeId)
+    let chats: Promise<WorkspaceChatStop> = Promise.resolve({ receipts: [], failed: false })
+    // Browser cleanup and the authoritative terminal admission run before any batch wait.
+    const panels = withWorktreeSleepTeardown(worktreeId, async () => {
+      shutdownWorktreeBrowsers(worktreeId)
+      await shutdownWorktreeTerminals(worktreeId, {
+        keepIdentifiers: true,
+        onAdmitted: () => {
+          chats = stopWorkspaceChats(useAppStore.getState(), worktreeId).catch((error: unknown) => {
+            console.error('[sleep-worktree] native chat stop failed', { worktreeId, error })
+            return { receipts: [], failed: true }
+          })
+        }
+      })
+    }).then(
+      () => {
         if (useAppStore.getState().activeWorktreeId === worktreeId) {
           clearWorktreeSleepIntent(worktreeId)
         }
-      } catch (err) {
-        console.error('[sleep-worktree] terminal or host suspension failed', {
-          worktreeId,
-          error: err
-        })
+      },
+      (error: unknown) => {
+        console.error('[sleep-worktree] panel shutdown failed', { worktreeId, error })
         failedWorktreeIds.add(worktreeId)
-        errors.push(describeSleepFailure(err))
-        continue
+        errors.push(describeSleepFailure(error))
       }
-      // Why after terminals: a teardown refused for an unattributable twin then stops no chat.
-      const { receipts, failed } = await stopWorkspaceChats(useAppStore.getState(), worktreeId)
+    )
+    return { worktreeId, settled: panels.then(() => chats) }
+  })
+  const results: WorkspaceSleepResult[] = []
+  try {
+    // A VM may carry another workspace's host: settle the entire batch before suspending any.
+    const chatStops = await Promise.all(attempts.map(({ settled }) => settled))
+    for (const [index, { worktreeId }] of attempts.entries()) {
+      const { receipts, failed } = chatStops[index]
       if (failed) {
         chatFailedIds.add(worktreeId)
         errors.push(describeChatStopFailure())
       }
-      // Why re-read the marker: a wake during the chat wait keeps the workspace awake.
-      const completed =
-        !failed && !failedWorktreeIds.has(worktreeId) && hasWorktreeSleepIntent(worktreeId)
+      if (!failedWorktreeIds.has(worktreeId) && hasWorktreeSleepIntent(worktreeId)) {
+        try {
+          await withWorktreeSleepTeardown(worktreeId, async () => {
+            if (typeof window !== 'undefined' && window.api?.ephemeralVm?.suspendWorkspace) {
+              await window.api.ephemeralVm.suspendWorkspace({ workspaceId: worktreeId })
+            }
+          })
+          if (useAppStore.getState().activeWorktreeId === worktreeId) {
+            clearWorktreeSleepIntent(worktreeId)
+          }
+        } catch (error) {
+          console.error('[sleep-worktree] host suspension failed', { worktreeId, error })
+          failedWorktreeIds.add(worktreeId)
+          errors.push(describeSleepFailure(error))
+        }
+      }
       results.push(
-        ...receipts.map((receipt) => ({ workspaceId: worktreeId, ...receipt, completed }))
+        ...receipts.map((receipt) => ({ workspaceId: worktreeId, ...receipt, completed: false }))
       )
     }
   } finally {
@@ -210,6 +209,12 @@ export async function sleepWorktreesReportingFailures(
   return {
     failedWorktreeIds: [...new Set([...failedWorktreeIds, ...chatFailedIds])],
     errors: [...new Set(errors)],
-    results
+    results: results.map((result) => ({
+      ...result,
+      completed:
+        !failedWorktreeIds.has(result.workspaceId) &&
+        !chatFailedIds.has(result.workspaceId) &&
+        hasWorktreeSleepIntent(result.workspaceId)
+    }))
   }
 }

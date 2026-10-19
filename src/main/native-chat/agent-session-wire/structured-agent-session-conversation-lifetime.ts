@@ -150,7 +150,8 @@ export function createStructuredAgentSessionConversationLifetime(host: {
             sessionId,
             fence,
             child,
-            owned
+            owned,
+            now: () => host.context().now()
           }),
         (error) =>
           deps().logger.warn('closing a stopped workspace chat handle failed', {
