@@ -15,12 +15,11 @@ import { createInitialStoreState } from './pty-connection-test-store-fixtures'
 import type { StoreState } from './pty-connection-test-store-state'
 import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinator-types'
 import type { NotificationDispatchRequest } from '../../../../shared/notification-settings-types'
+import { reserveNotificationCooldown } from '../../../../shared/notification-burst-cooldown'
 import {
   installTerminalTestGlobals,
   restoreTerminalTestGlobals
 } from './pty-connection-test-environment'
-
-vi.mock('../../../../main/i18n/main-i18n', () => ({ translateMain: (key: string) => key }))
 
 const PANE_KEY = makePaneKey('tab-1', LEAF_1)
 const SEA = "The sea's waves carry the endless rhythm of tides."
@@ -106,39 +105,17 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
     vi.useFakeTimers()
     vi.mocked(window.api.pty.getForegroundProcess).mockImplementation(async () => foreground)
     vi.mocked(window.api.pty.hasChildProcesses).mockImplementation(async () => foreground !== null)
-    // Main's real delivery service, so its 5 s cooldown decides what the user sees.
-    const { createNotificationDeliveryService } =
-      await import('../../../../main/notifications/notification-delivery-service')
+    // Main's desktop cooldown, keyed as main's delivery service keys it, decides what the user sees.
     banners = []
-    const delivery = createNotificationDeliveryService({
-      readNotificationSettings: () => ({
-        enabled: true,
-        agentTaskComplete: true,
-        terminalBell: true,
-        suppressWhenFocused: false,
-        customSoundId: 'system',
-        customSoundPath: null,
-        customSoundVolume: 1,
-        mutedNotificationSourceIds: [],
-        notifyHiddenWorkspaces: true
-      }),
-      findActiveWindow: () => null,
-      isWindowVisible: () => false,
-      setTrayAttention: () => {},
-      isNotificationSupported: () => true,
-      dispatchMobileNotification: null,
-      readAuthorizationStatus: async () => 'authorized',
-      recordDeliveryOutcome: () => {},
-      deliverNative: (request) => {
-        banners.push(request)
-        return { delivered: true }
-      },
-      platform: 'linux',
-      now: () => Date.now()
+    const recentDesktop = new Map<string, number>()
+    vi.mocked(window.api.notifications.dispatch).mockImplementation(async (request) => {
+      const key = request.attentionKey ?? request.worktreeId ?? 'global'
+      if (!reserveNotificationCooldown(recentDesktop, key, Date.now())) {
+        return { delivered: false, reason: 'cooldown' }
+      }
+      banners.push(request)
+      return { delivered: true }
     })
-    vi.mocked(window.api.notifications.dispatch).mockImplementation(async (request) =>
-      delivery.dispatch(request)
-    )
   })
 
   afterEach(async () => {
@@ -168,7 +145,7 @@ describe('Claude completion banners through the real pane and hook lanes', () =>
       if (!layout) {
         throw new Error('Expected the pane layout')
       }
-      transport.attach({ existingPtyId: ptyId })
+      vi.mocked(transport.getPtyId).mockReturnValue(ptyId)
       mockStoreState.ptyIdsByTabId = { 'tab-1': [ptyId] }
       mockStoreState.terminalLayoutsByTabId = {
         'tab-1': { ...layout, ptyIdsByLeafId: { [LEAF_1]: ptyId } }
