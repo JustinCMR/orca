@@ -15,3 +15,9 @@ config/tsconfig.node.json src/renderer/src/components/native-chat/native-chat-co
 config/tsconfig.node.json src/renderer/src/components/native-chat/native-chat-resolution-receipt.ts
 config/tsconfig.node.json src/renderer/src/components/native-chat/structured-agent-question-projection.ts
 tests/e2e/capture-opencode-tui-repro.mjs src/cli/cmd/tui/ui/spinner
+.github/workflows/ssh-hostile-hosts.yml src/main/ssh/connection/
+.github/workflows/ssh-hostile-hosts.yml src/main/ssh/ssh-posix-command-wrapper.ts
+.github/workflows/ssh-hostile-hosts.yml src/shared/shell-argument-quoting.ts
+.github/workflows/ssh-windows-hosts.yml src/main/ssh/connection/
+.github/workflows/ssh-windows-hosts.yml src/main/ssh/ssh-posix-command-wrapper.ts
+.github/workflows/ssh-windows-hosts.yml src/shared/shell-argument-quoting.ts
