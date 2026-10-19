@@ -8,7 +8,12 @@ export const aggregateJob = aggregateWorkflow.jobs.verify
 export const aggregateShell = aggregateJob.steps.find(
   (step) => step.name === 'Require successful checks'
 )
-export const aggregateSelectors = PR_CHECK_JOBS.filter((job) => job !== 'orcad_browser')
+// This release line runs main's pr.yml, whose dependency_isolation job its change filter never selects.
+export const RELEASE_DORMANT_JOBS = ['dependency_isolation']
+export const aggregateSelectors = [
+  ...PR_CHECK_JOBS.filter((job) => job !== 'orcad_browser'),
+  ...RELEASE_DORMANT_JOBS
+]
 export const aggregateRequiredJobs = aggregateJob.needs.filter((job) => job !== 'code_paths')
 export const aggregateVariable = (job) => job.replaceAll('-', '_').toUpperCase()
 

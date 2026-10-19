@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parse } from 'yaml'
 import { PR_CHECK_JOBS } from './pr-code-change-scope.mjs'
+import { RELEASE_DORMANT_JOBS } from './pr-aggregate-gate-context.mjs'
 import {
   lookupReadyCheckRun,
   prCheckRunTitle,
@@ -158,7 +159,8 @@ describe('ready-for-review required check reuse', () => {
         PR_CHECK_JOBS.filter((job) => job !== 'static_analysis' && job !== 'typecheck').map(
           (job) => (job === 'orcad_browser' ? 'test' : job)
         )
-      )
+      ),
+      ...RELEASE_DORMANT_JOBS
     ])
   })
 

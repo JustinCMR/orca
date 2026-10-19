@@ -148,7 +148,7 @@ it.each([
 
 it('re-includes the real WSL distro root after excluding unit tests', () => {
   const paths = workflows.wsl.on.pull_request.paths
-  const exclude = paths.indexOf('!src/main/wsl/**/*.test.ts')
+  const exclude = paths.indexOf('!**/*.test.ts')
   expect(exclude).toBeGreaterThan(paths.indexOf('src/main/wsl/**'))
   expect(paths.indexOf('src/main/wsl/wsl-orcad-real-distro-lane.test.ts')).toBeGreaterThan(exclude)
   const steps = workflows.wsl.jobs.wsl2.steps
@@ -161,8 +161,9 @@ it('re-includes the real WSL distro root after excluding unit tests', () => {
 
 // Each remote host lane executes these sources, so a change to one must start the lane.
 describe.each([
-  ['hostileHosts', ['src/main/ssh/ssh-connection.ts', 'src/main/ssh/ssh-connection-utils.ts']],
-  ['windowsHosts', ['src/main/ssh/ssh-connection.ts', 'src/main/ssh/ssh-connection-utils.ts']],
+  // main's SSH lane paths name its ssh/connection/ folder, which this release line lacks.
+  ['hostileHosts', ['src/main/ssh/ssh-reconnect-error-classification.ts']],
+  ['windowsHosts', ['src/main/ssh/ssh-reconnect-error-classification.ts']],
   ['wsl', ['src/main/orcad/orcad-wsl-host-login-environment.ts']]
 ])('%s remote transport routing', (lane, sources) => {
   const paths = workflows[lane].on.pull_request.paths
