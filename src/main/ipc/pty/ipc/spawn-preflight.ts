@@ -1,5 +1,6 @@
 import { withClaudeProfileTerminalEnv } from '../../../claude-accounts/claude-profile-installed-router'
 import { mintPtySessionId } from '../../../daemon/pty-session-id'
+import { SessionNotFoundError } from '../../../daemon/daemon-errors'
 import { LocalPtyProvider } from '../../../providers/local-pty-provider'
 import {
   isClaudeLaunchCommand,
@@ -13,6 +14,9 @@ import { getConnectionExecutionHostId } from '../../../../shared/execution-host'
 
 export async function preparePtyIpcSpawnPreflight(ctx: PtyIpcSpawnState): Promise<void> {
   const args = ctx.args
+  if (args.attachOnly === true && args.sessionId === undefined) {
+    throw new SessionNotFoundError('')
+  }
   // Establish daemon identity before the first await so hidden delivery is gated before byte zero.
   // Only this machine spawns here: an `ssh:` connection throws, so every line below is local.
   ctx.provider = getProvider(getConnectionExecutionHostId(args.connectionId))
@@ -47,7 +51,8 @@ export async function preparePtyIpcSpawnPreflight(ctx: PtyIpcSpawnState): Promis
           worktreeId: ctx.earlyWorktreeId,
           tabId: ctx.earlyStablePaneOwner.tabId,
           leafId: ctx.earlyStablePaneOwner.leafId,
-          ownsPaneSpawnReservation: true
+          ownsPaneSpawnReservation: true,
+          attachOnly: args.attachOnly === true
         })
       : null
   ctx.spawnTiming.mark('stable_adoption')
@@ -82,7 +87,8 @@ export async function preparePtyIpcSpawnPreflight(ctx: PtyIpcSpawnState): Promis
       }
     }
   }
-  ctx.isClaudeLaunch = !ctx.preAdoptedStablePane && isClaudeLaunchCommand(args.command)
+  ctx.isClaudeLaunch =
+    !ctx.preAdoptedStablePane && args.attachOnly !== true && isClaudeLaunchCommand(args.command)
   // Why: daemon host-env setup needs a stable id BEFORE provider.spawn so buildPtyHostEnv hooks/Pi cleanup can run; daemon still honors opts.sessionId ?? mint().
   // Note: sessionId is STABLE across daemon restarts by design — do NOT simplify to a fresh UUID per spawn; that orphans reconnectable state.
   // Why: only clear ids minted in THIS request on failure — a caller-supplied args.sessionId may name an existing PTY we must not clobber.

@@ -26,6 +26,12 @@ type HiddenPaneBinding = {
 const PANE_KEY = makePaneKey('tab-1', LEAF_2)
 const DEAD_SESSION_ID = 'wt-1@@dead-session'
 
+type ResumingConnectOptions = {
+  sessionId?: string
+  attachOnly?: boolean
+  callbacks?: { onError?: (message: string) => void }
+}
+
 /** After a relaunch: one sleeping agent pane with no live PTY. */
 export function registerPtyConnectionHiddenSleepingResumeTests(): void {
   let mockStoreState: StoreState
@@ -33,6 +39,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
   let createdTransportOptions: Record<string, unknown>[] = []
   let storeSubscribers: ((state: StoreState) => void)[] = []
   let connectPanePtyRef: typeof connectPanePty | null = null
+  let hostLiveness: boolean | null = true
 
   function seedSleepingPane(
     restoredPtyId: string | null,
@@ -90,7 +97,12 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
   /** A pane transport with no PTY until a connect binds one, as after a relaunch. */
   function createResumingTransport(): MockTransport {
     const transport = createMockTransport()
-    transport.connect.mockImplementation(async (opts: { sessionId?: string }) => {
+    transport.connect.mockImplementation(async (opts: ResumingConnectOptions) => {
+      if (opts.attachOnly && hostLiveness !== true) {
+        const gone = hostLiveness === false
+        opts.callbacks?.onError?.(gone ? `Session not found: ${opts.sessionId}` : 'reconnect')
+        return undefined
+      }
       const ptyId = opts.sessionId ?? 'resumed-pty'
       transport.getPtyId.mockReturnValue(ptyId)
       return opts.sessionId ? { id: ptyId } : ptyId
@@ -107,8 +119,9 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
     return connectPanePtyRef!(...args) as unknown as HiddenPaneBinding
   }
 
+  /** What the host answers a hidden pane's attach-only reattach: live, gone, or unreachable. */
   function setHostLiveness(isLive: boolean | null): void {
-    vi.mocked(window.api.pty.hasPty).mockResolvedValue(isLive)
+    hostLiveness = isLive
   }
 
   function resumeCommands(transport: MockTransport): (string | undefined)[] {
@@ -121,6 +134,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       vi.clearAllMocks()
       transportFactoryQueue = []
       createdTransportOptions = []
+      hostLiveness = true
       storeSubscribers = []
       mockStoreState = createInitialStoreState(() => mockStoreState)
       bindPtyConnectionTestMocks({
@@ -162,29 +176,33 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       const { transport, binding, isVisibleRef } = connectHiddenPane(DEAD_SESSION_ID)
       await flushAsyncTicks(10)
 
-      expect(transport.connect).not.toHaveBeenCalled()
+      expect(transport.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sessionId: DEAD_SESSION_ID, attachOnly: true })
+      )
 
       isVisibleRef.current = true
       binding.noteVisibilityResume()
       await flushAsyncTicks(10)
 
-      expect(transport.connect).toHaveBeenCalledTimes(1)
+      expect(transport.connect).toHaveBeenCalledTimes(2)
       // The reveal takes the same reattach a visible pane would, so the host restores its scrollback.
-      expect(transport.connect.mock.calls[0]?.[0]).toMatchObject({ sessionId: DEAD_SESSION_ID })
-      expect(resumeCommands(transport)[0]).toContain("'resume' 'codex-session-1'")
+      expect(transport.connect.mock.calls[1]?.[0]).toMatchObject({ sessionId: DEAD_SESSION_ID })
+      expect(transport.connect.mock.calls[1]?.[0]).not.toHaveProperty('attachOnly')
+      expect(resumeCommands(transport)[1]).toContain("'resume' 'codex-session-1'")
     })
 
     it.each([
       ['live', true],
       ['unverifiable', null]
-    ] as const)('reattaches a hidden %s session at mount', async (_label, isLive) => {
+    ] as const)('only attaches a hidden %s session at mount', async (_label, isLive) => {
       seedSleepingPane(DEAD_SESSION_ID)
       setHostLiveness(isLive)
       const { transport } = connectHiddenPane(DEAD_SESSION_ID)
       await flushAsyncTicks(10)
 
-      expect(transport.connect).toHaveBeenCalledTimes(1)
-      expect(transport.connect.mock.calls[0]?.[0]).toMatchObject({ sessionId: DEAD_SESSION_ID })
+      expect(transport.connect).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sessionId: DEAD_SESSION_ID, attachOnly: true })
+      )
     })
 
     it('resumes a hidden pane at mount when a background mount asked for its tab', async () => {
@@ -203,15 +221,15 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       setHostLiveness(false)
       const { transport, binding } = connectHiddenPane(DEAD_SESSION_ID)
       await flushAsyncTicks(10)
-      expect(transport.connect).not.toHaveBeenCalled()
+      expect(transport.connect).toHaveBeenCalledTimes(1)
 
       const claimed = new Set<string>()
       expect(binding.wakeHibernatedAgentIfArmed(claimed)).not.toBeNull()
       expect(binding.wakeHibernatedAgentIfArmed(claimed)).toBeNull()
       await flushAsyncTicks(10)
 
-      expect(transport.connect).toHaveBeenCalledTimes(1)
-      expect(transport.connect.mock.calls[0]?.[0]).toMatchObject({ sessionId: DEAD_SESSION_ID })
+      expect(transport.connect).toHaveBeenCalledTimes(2)
+      expect(transport.connect.mock.calls[1]?.[0]).toMatchObject({ sessionId: DEAD_SESSION_ID })
     })
 
     it('owns its record while held, so an activation sweep does not relaunch it elsewhere', async () => {
@@ -233,8 +251,11 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       const { requestSleepingAgentWakeOnMount } = await import('@/lib/sleeping-agent-wake-requests')
       requestSleepingAgentWakeOnMount('wt-1', ['tab-1'])
       const transport = createMockTransport()
-      // The reattach comes back with no PTY, so the pane falls back to a fresh resume.
-      transport.connect.mockResolvedValueOnce(undefined).mockResolvedValue('resumed-pty')
+      // The attach-only and woken reattaches come back with no PTY, so the pane falls back to a fresh resume.
+      transport.connect
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue('resumed-pty')
       transportFactoryQueue.push(transport)
       connectPane(
         buildPaneConnectionDeps(() => mockStoreState, {
@@ -245,8 +266,8 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       )
       await flushAsyncTicks(20)
 
-      expect(transport.connect).toHaveBeenCalledTimes(2)
-      expect(resumeCommands(transport)[1]).toContain("'resume' 'codex-session-1'")
+      expect(transport.connect).toHaveBeenCalledTimes(3)
+      expect(resumeCommands(transport)[2]).toContain("'resume' 'codex-session-1'")
     })
 
     it('keeps owning its record while the woken resume is still starting', async () => {
@@ -361,7 +382,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       isVisibleRef.current = true
       binding.noteVisibilityResume()
       await flushAsyncTicks(20)
-      expect(transport.connect).toHaveBeenCalledTimes(2)
+      expect(transport.connect).toHaveBeenCalledTimes(3)
       expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
 
       fallback.resolve('resumed-pty')

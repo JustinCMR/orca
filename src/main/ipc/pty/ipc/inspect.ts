@@ -8,6 +8,8 @@ import {
 } from '../../../providers/pty-process-list-admission'
 import type { PtyListedSession, PtySessionListScope } from '../../../../shared/pty-listed-session'
 import { ptyOwnership } from '../provider/ownership-state'
+import { probeProviderPtyLiveness } from '../provider/liveness'
+import type { IPtyProvider } from '../../../providers/pty-provider-contract'
 import {
   getProviderForPty,
   getProvider,
@@ -30,6 +32,21 @@ import {
   rendererSerializerReadiness,
   settlePendingPaneSerializer
 } from '../pane/serializer-state'
+
+// Why pending only: overlapping misses share one host round trip, and a settled answer is never reused.
+const pendingHostLivenessProbes = new WeakMap<IPtyProvider, Map<string, Promise<boolean | null>>>()
+
+function probeSharedHostLiveness(provider: IPtyProvider, id: string): Promise<boolean | null> {
+  const byId = pendingHostLivenessProbes.get(provider) ?? new Map<string, Promise<boolean | null>>()
+  pendingHostLivenessProbes.set(provider, byId)
+  const existing = byId.get(id)
+  if (existing) {
+    return existing
+  }
+  const probe = probeProviderPtyLiveness(provider, id).finally(() => byId.delete(id))
+  byId.set(id, probe)
+  return probe
+}
 
 export function installPtyInspectIpcHandlers(deps: {
   getLocalPtyProviderStartupPromise: (hostId?: ResolvedPtyHost) => Promise<void> | undefined
@@ -163,7 +180,8 @@ export function installPtyInspectIpcHandlers(deps: {
       return null
     }
     try {
-      return provider.hasPty(args.id)
+      // Why: hasPty knows only ids this run attached; a session that survived a restart is a miss, not an exit.
+      return provider.hasPty(args.id) || (await probeSharedHostLiveness(provider, args.id))
     } catch {
       // Why: liveness is only allowed to close panes on an authoritative false.
       return null

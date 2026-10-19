@@ -48,6 +48,8 @@ export const ptySessionControlApi = {
     terminalColorQueryReplies?: { foreground?: string; background?: string }
     // Why: marks the PTY hidden before its first byte so the delivery gate + model responder own spawn-time queries (terminal-query-authority.md §races).
     initiallyHidden?: boolean
+    // Adopt `sessionId` only; main rejects with "Session not found" instead of creating.
+    attachOnly?: boolean
     // Why: closes the SIGKILL race (INVESTIGATION.md) — main sync-flushes the (worktreeId, tabId, leafId → ptyId) binding before pty:spawn returns.
     tabId?: string
     leafId?: string

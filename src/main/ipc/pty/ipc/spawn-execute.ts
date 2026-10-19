@@ -56,7 +56,8 @@ export async function executePtyIpcSpawn(ctx: PtyIpcSpawnState): Promise<void> {
           owner: stablePaneOwnerCandidate,
           worktreeId: args.worktreeId,
           connectionId: args.connectionId,
-          resolveOwner
+          resolveOwner,
+          attachOnly: args.attachOnly === true
         })
     ctx.result = stablePaneSpawn.result
     ctx.stablePaneOwner = stablePaneSpawn.owner

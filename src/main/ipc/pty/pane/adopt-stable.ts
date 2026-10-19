@@ -75,9 +75,11 @@ export async function adoptStablePane(
     worktreeId: args.worktreeId,
     connectionId: args.connectionId,
     resolveOwner: () =>
-      resolveStablePaneOwner(runtime, store, paneKey, args.worktreeId, args.connectionId)
+      resolveStablePaneOwner(runtime, store, paneKey, args.worktreeId, args.connectionId),
+    attachOnly: args.attachOnly
   })
-  if (!ownerKey) {
+  // Why unshared: a create-capable spawn joining this would inherit its refusal to create.
+  if (!ownerKey || args.attachOnly) {
     return await adoption
   }
   stablePaneAdoptionsByOwnerKey.set(ownerKey, adoption)

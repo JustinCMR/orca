@@ -90,8 +90,8 @@ export function noteHiddenAgentResumePtyEnded(session: ConnectPanePtySession): v
 }
 
 /**
- * Reattaches a restored session, unless the pane is hidden and its host reports the session gone:
- * then the reattach would cold-restore the agent, so it waits for the pane to be shown instead.
+ * Reattaches a restored session. A hidden pane with a sleeping agent may only adopt its live
+ * session; when that fails, the reattach that can resume the agent waits for the pane to be shown.
  */
 export function startDeferredSessionReattachUnlessHiddenAgentResume(
   session: ConnectPanePtySession,
@@ -99,36 +99,27 @@ export function startDeferredSessionReattachUnlessHiddenAgentResume(
 ): void {
   const reattach = (): void => startDeferredSessionReattach(session, sessionId)
   if (
-    // Why local only: hasPty answers for this machine's providers; a paired host's id reads unverifiable.
+    // Why local only: attach-only is enforced by this machine's providers, not a paired or SSH host.
     isRemoteRuntimePtyId(sessionId) ||
     session.runtimeEnvironmentId ||
+    session.transport.getConnectionId?.() ||
     session.deps.isVisibleRef.current ||
-    typeof window.api.pty.hasPty !== 'function' ||
     !session.buildColdRestoreAgentResumeStartup()?.sleepingRecordEntry
   ) {
     reattach()
     return
   }
-  const generation = session.transportStreamGeneration
-  void Promise.resolve(window.api.pty.hasPty(sessionId))
-    .catch(() => null)
-    .then((isLive) => {
-      if (
-        session.disposed ||
-        generation !== session.transportStreamGeneration ||
-        session.deps.paneTransportsRef.current.get(session.pane.id) !== session.transport
-      ) {
-        return
-      }
-      // Why only false: a live or unverifiable session must attach, and only the host's "exited" may hold it.
-      const deferred =
-        isLive === false &&
-        deferHiddenAgentResume(session, session.buildColdRestoreAgentResumeStartup(), () => {
-          reattach()
-          return Promise.resolve(sessionId)
-        })
-      if (!deferred) {
+  startDeferredSessionReattach(session, sessionId, () => {
+    const deferred = deferHiddenAgentResume(
+      session,
+      session.buildColdRestoreAgentResumeStartup(),
+      () => {
         reattach()
+        return Promise.resolve(sessionId)
       }
-    })
+    )
+    if (!deferred) {
+      reattach()
+    }
+  })
 }

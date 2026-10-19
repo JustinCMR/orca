@@ -3,6 +3,7 @@ import { agentSessionOwnerBindingsEqual } from '../../../../shared/claimed-agent
 import { addNodePtyRecoveryHint } from '../../../daemon/node-pty-error-hints'
 import type { Store } from '../../../persistence'
 import type { IPtyProvider } from '../../../providers/pty-provider-contract'
+import { LocalPtyProvider } from '../../../providers/local-pty-provider'
 import { isCurrentPtyExit, ptyIncarnationById, ptyOwnership } from './ownership-state'
 import { getRelayPtyId } from './registry'
 import {
@@ -50,6 +51,17 @@ export async function isProviderPtyLive(
   return (await provider.listProcesses(deadlineMs !== undefined ? { deadlineMs } : undefined)).some(
     (session) => session.id === ptyId
   )
+}
+
+/** Host liveness: the in-process provider is its own sole owner (#12393); any other probe-less provider is doubt. */
+export async function probeProviderPtyLiveness(
+  provider: IPtyProvider,
+  ptyId: string
+): Promise<boolean | null> {
+  if (provider.probePtyLiveness) {
+    return await provider.probePtyLiveness(ptyId)
+  }
+  return provider instanceof LocalPtyProvider ? provider.hasPty(ptyId) : null
 }
 
 export async function isProviderAgentSessionOwnerLive(

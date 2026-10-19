@@ -179,6 +179,8 @@ export type StablePaneSpawnContext = {
   connectionId?: string | null
   resolveOwner?: () => StablePaneOwner | null
   onFreshSpawn?: (result: PtySpawnResult) => void
+  /** Creation forbidden: absence is returned as SessionNotFoundError and the owner is kept. */
+  attachOnly?: boolean
 }
 
 export function stablePanePersistenceFence(
@@ -219,6 +221,26 @@ export async function persistAdmittedStablePaneBinding(args: {
   return true
 }
 
+/** Adopts `options.sessionId` only: no startup command, agent delivery or new-session claim. */
+function attachOnlySpawnOptions(options: PtySpawnOptions): PtySpawnOptions {
+  if (!options.sessionId) {
+    throw new SessionNotFoundError('')
+  }
+  return {
+    ...options,
+    attachOnly: true,
+    isNewSession: undefined,
+    command: undefined,
+    commandDelivery: undefined,
+    startupCommandDelivery: undefined,
+    launchAgent: undefined,
+    startupIngress: undefined,
+    agentSessionEnsure: undefined,
+    agentSessionCreateOperationId: undefined,
+    onPtySpawnCommitted: undefined
+  }
+}
+
 export async function attachStablePaneOwner(
   args: StablePaneSpawnContext & { owner: StablePaneOwner }
 ): Promise<{ result: PtySpawnResult; owner: StablePaneOwner } | null> {
@@ -226,20 +248,9 @@ export async function attachStablePaneOwner(
   let result: PtySpawnResult
   try {
     result = await provider.spawn({
-      ...spawnOptions,
-      sessionId: owner.ptyId,
-      attachOnly: true,
+      ...attachOnlySpawnOptions({ ...spawnOptions, sessionId: owner.ptyId }),
       expectedIncarnationId: owner.runtimeIncarnationId ?? owner.persistedIncarnationId,
-      expectedIncarnationIsAuthoritative: owner.runtimeIncarnationId !== undefined,
-      isNewSession: undefined,
-      command: undefined,
-      commandDelivery: undefined,
-      startupCommandDelivery: undefined,
-      launchAgent: undefined,
-      startupIngress: undefined,
-      agentSessionEnsure: undefined,
-      agentSessionCreateOperationId: undefined,
-      onPtySpawnCommitted: undefined
+      expectedIncarnationIsAuthoritative: owner.runtimeIncarnationId !== undefined
     })
   } catch (error) {
     if (error instanceof TerminalSessionOwnerUnverifiedError) {
@@ -250,7 +261,7 @@ export async function attachStablePaneOwner(
       throw new TerminalHostGoneError()
     }
     // Why: only the process that owns the PTY answers this, so its absence is an observed exit.
-    if (!(error instanceof SessionNotFoundError)) {
+    if (!(error instanceof SessionNotFoundError) || args.attachOnly) {
       throw error
     }
     const ownerBeforeRetire = args.resolveOwner?.()
@@ -291,6 +302,10 @@ export async function spawnForStablePane(
     if (attached) {
       return attached
     }
+  }
+  if (args.attachOnly) {
+    const result = await args.provider.spawn(attachOnlySpawnOptions(args.spawnOptions))
+    return { result, owner: null }
   }
   const result = await args.provider.spawn(args.spawnOptions)
   args.onFreshSpawn?.(result)

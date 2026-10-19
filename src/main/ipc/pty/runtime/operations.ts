@@ -2,6 +2,7 @@ import { isRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import type { IPtyProvider } from '../../../providers/pty-provider-contract'
 import { LocalPtyProvider } from '../../../providers/local-pty-provider'
+import { probeProviderPtyLiveness } from '../provider/liveness'
 import { ptyOwnership } from '../provider/ownership-state'
 import { ptySizes } from '../delivery/visibility-state'
 import { rendererSerializerReadiness } from '../pane/serializer-state'
@@ -98,16 +99,7 @@ export async function probePtyLivenessFromRuntimeController(
     if (startupPromise) {
       await startupPromise
     }
-    const provider = getProviderForPty(ptyId)
-    if (provider.probePtyLiveness) {
-      return await provider.probePtyLiveness(ptyId)
-    }
-    // Why: the in-process provider is its own sole owner (#12393), so its
-    // refusal is authoritative; every other probe-less provider is doubt.
-    if (provider instanceof LocalPtyProvider) {
-      return provider.hasPty(ptyId)
-    }
-    return null
+    return await probeProviderPtyLiveness(getProviderForPty(ptyId), ptyId)
   } catch {
     return null
   }

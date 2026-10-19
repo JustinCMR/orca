@@ -179,6 +179,8 @@ export type PtyTransport = {
      *  first byte and the gate + model responder own spawn-time queries.
      *  Ignored by remote-runtime transports (not gate-markable). */
     initiallyHidden?: boolean
+    /** Local IPC only: adopt `sessionId` if it lives, never create; absence fails the connect. */
+    attachOnly?: boolean
     /** Sent only when this connect resumes an agent, and only to hosts that accept it. */
     resumeSpawnIntent?: RestoreSpawnIntent
     command?: string

@@ -200,12 +200,23 @@ describe('registerPtyHandlers', () => {
 
     expect(result).toEqual([{ id: 'local-pty', authoritative: false }])
   })
-  it('checks single-PTY liveness without listing every session', async () => {
+  // Why: hasPty knows only ids this run attached; a restored session the daemon still runs must not read exited.
+  it('answers an attached-set miss from the host, sharing only overlapping probes', async () => {
     const hasPty = vi.fn((id: string) => id === 'live-pty')
+    const restored = makeDeferred()
+    const answers: Record<string, () => Promise<boolean | null>> = {
+      'restored-pty': () => restored.promise.then(() => true),
+      'dead-pty': async () => false,
+      'unknown-pty': async () => null,
+      'broken-pty': async () => {
+        throw new Error('daemon unreachable')
+      }
+    }
+    const probePtyLiveness = vi.fn((id: string) => answers[id]!())
     const listProcesses = vi.fn(async () => {
       throw new Error('listProcesses should not be called')
     })
-    setLocalPtyProvider({
+    const provider = {
       spawn: vi.fn(),
       write: vi.fn(),
       resize: vi.fn(),
@@ -225,17 +236,34 @@ describe('registerPtyHandlers', () => {
       listProcesses,
       attach: vi.fn(),
       hasPty,
+      probePtyLiveness,
       getDefaultShell: vi.fn(),
       getProfiles: vi.fn()
-    } as never)
+    }
+    setLocalPtyProvider(provider as never)
     registerPtyHandlers(mainWindow as never)
+    const hasPtyIpc = (id: string) =>
+      Promise.resolve(handlers.get('pty:hasPty')!(null, { id })) as Promise<boolean | null>
 
-    await expect(handlers.get('pty:hasPty')!(null, { id: 'live-pty' })).resolves.toBe(true)
-    await expect(handlers.get('pty:hasPty')!(null, { id: 'dead-pty' })).resolves.toBe(false)
+    await expect(hasPtyIpc('live-pty')).resolves.toBe(true)
+    expect(probePtyLiveness).not.toHaveBeenCalled()
 
-    expect(hasPty).toHaveBeenCalledWith('live-pty')
-    expect(hasPty).toHaveBeenCalledWith('dead-pty')
+    const overlapping = [hasPtyIpc('restored-pty'), hasPtyIpc('restored-pty')]
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    restored.resolve()
+    await expect(Promise.all(overlapping)).resolves.toEqual([true, true])
+    expect(probePtyLiveness).toHaveBeenCalledTimes(1)
+    await expect(hasPtyIpc('restored-pty')).resolves.toBe(true)
+    expect(probePtyLiveness).toHaveBeenCalledTimes(2)
+
+    await expect(hasPtyIpc('dead-pty')).resolves.toBe(false)
+    await expect(hasPtyIpc('unknown-pty')).resolves.toBe(null)
+    await expect(hasPtyIpc('broken-pty')).resolves.toBe(null)
     expect(listProcesses).not.toHaveBeenCalled()
+
+    // Only the in-process sole owner may answer a miss false without asking the host.
+    setLocalPtyProvider({ ...provider, probePtyLiveness: undefined } as never)
+    await expect(hasPtyIpc('dead-pty')).resolves.toBe(null)
   })
   it('treats unsupported or failed single-PTY liveness as unknown', async () => {
     setLocalPtyProvider({

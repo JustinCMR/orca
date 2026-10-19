@@ -125,6 +125,38 @@ describe('stable pane adoption after the owning host reports the PTY absent', ()
     }
   )
 
+  // A hidden restore may only adopt: absence reaches the caller with the binding kept and nothing created.
+  it.each([
+    ['a persisted owner', OWNER, OWNER.ptyId],
+    ['no owner', null, OWNER.ptyId],
+    ['no owner or session id', null, undefined]
+  ])('never creates for an attach-only request with %s', async (_label, owner, sessionId) => {
+    const { store, read } = sessionStore([LEAF])
+    const before = JSON.stringify(read())
+    const spawn = vi.fn().mockRejectedValue(new SessionNotFoundError(OWNER.ptyId))
+
+    await expect(
+      spawnForStablePane({
+        runtime: undefined,
+        store,
+        worktreeId: WORKTREE,
+        provider: { spawn } as unknown as IPtyProvider,
+        spawnOptions: { cols: 80, rows: 24, sessionId, command: 'codex resume provider-session' },
+        owner,
+        connectionId: 'conn-1',
+        resolveOwner: () => owner,
+        attachOnly: true
+      })
+    ).rejects.toBeInstanceOf(SessionNotFoundError)
+
+    expect(spawn.mock.calls).toEqual(
+      sessionId
+        ? [[expect.objectContaining({ sessionId, attachOnly: true, command: undefined })]]
+        : []
+    )
+    expect(JSON.stringify(read())).toBe(before)
+  })
+
   it('spawns fresh once the owning host has positively answered for that id', async () => {
     const { run, spawn } = spawnAfterAttachRejection(new SessionNotFoundError(OWNER.ptyId))
 
