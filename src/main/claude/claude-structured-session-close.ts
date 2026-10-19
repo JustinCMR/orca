@@ -96,8 +96,6 @@ async function finalizeClaudePublishedSession(
   input: CloseClaudePublishedSessionInput,
   session: ClaudeSession
 ): Promise<boolean> {
-  session.events?.observeExit?.(claudeHeldSends(session))
-  retireClaudeDispatchWaiters(session)
   settleClaudeTurnEndWaiters(session)
   // Settle every in-flight permission callback so closing leaves no dangling promise; `null`
   // writes no response, and the SDK ignores any post-cleanup answer regardless.
@@ -120,6 +118,10 @@ async function finalizeClaudePublishedSession(
     }
     rootExitVerdict = cleanupError
   }
+  // Held until the step that tells the host the child ended: released before the close's wait, a
+  // send reads as held by nobody, so in doubt, while the host still keeps the child.
+  session.events?.observeExit?.(claudeHeldSends(session))
+  retireClaudeDispatchWaiters(session)
   // Queues the session's ending for the host's child records; the adapter delivers it after close.
   // Even a proven close is Orca losing contact, not a Stop the CLI accepted: what still ran ends
   // with no outcome anyone reported.

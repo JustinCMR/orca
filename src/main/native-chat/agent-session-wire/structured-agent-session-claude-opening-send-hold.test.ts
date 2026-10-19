@@ -321,13 +321,27 @@ function stop() {
   })
 }
 
-// Claude's interrupt names no turn, but its Stop ends the CLI, and that end settles the send.
+// Claude's interrupt names no turn, but its Stop ends the CLI, and that end settles the send. Until
+// the close proves it, the CLI still holds the send: never doubt while the child is being stopped.
 it('settles a send a Stop took before its echo, and the next message goes out', async () => {
   const connection = claude.connections[0]!
   const first = await send('FIRST prompt')
   await eventually(() => expect(written(connection, 'FIRST prompt')).toBeDefined())
+  const close = connection.close
+  let finishClose: (() => void) | undefined
+  connection.close = () =>
+    new Promise((resolve) => (finishClose = () => void close().then(resolve)))
 
-  expect(await stop()).toMatchObject({ ok: true, value: { cancelled: true } })
+  const stopped = stop()
+  await eventually(() => expect(finishClose).toBeDefined())
+  expect(
+    host
+      .currentWork(SESSION)
+      ?.restatedSubmissions()
+      .find((entry) => entry.clientMessageId === first)?.dispatchState
+  ).toBe('pending')
+  finishClose?.()
+  expect(await stopped).toMatchObject({ ok: true, value: { cancelled: true } })
   await eventually(() => expect(connection.closeCount).toBe(1))
   await eventually(async () =>
     expect(
