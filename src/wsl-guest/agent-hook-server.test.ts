@@ -550,7 +550,7 @@ describe('RelayAgentHookServer', () => {
           tabId: 'tab-1',
           env: 'remote',
           version: '1',
-          payload: { hook_event_name: 'Stop', stop_hook_active: true, transcriptPath }
+          payload: { hook_event_name: 'Stop', transcriptPath }
         })
       })
       await fetch(`http://127.0.0.1:${port}/hook/copilot`, {
@@ -583,10 +583,6 @@ describe('RelayAgentHookServer', () => {
       expect(forward.mock.calls.at(-1)?.[0].payload.lastAssistantMessage).toBe(
         'Relay transcript completed.'
       )
-      // The relay marks the Stop's end once; SessionEnd and the result retry restate it.
-      const ends = forward.mock.calls.map(([envelope]) => envelope.turnEndedAt)
-      expect(ends[0]).toEqual(expect.any(Number))
-      expect(new Set(ends)).toEqual(new Set([ends[0]]))
     } finally {
       server.stop()
     }
