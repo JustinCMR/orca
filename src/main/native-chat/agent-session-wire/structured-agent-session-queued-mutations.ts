@@ -186,6 +186,7 @@ export function sendQueuedStructuredAgentMessage(
         }
         throw error
       }
+      await ctx.onSendAdmitted?.()
       const submission = submissionFor(ctx, submissionId)
       if (!submission) {
         throw new Error('agent_session_submission_lost')

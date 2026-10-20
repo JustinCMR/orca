@@ -252,6 +252,7 @@ export type QueuedMessageDrainDeps = {
   currentWork: (sessionId: string) => StructuredAgentSessionCurrentWork | null
   /** The consumed submission is ordinary #22821 work from here on. */
   wakeDelivery: (sessionId: string) => void
+  onSendAdmitted?: (sessionId: string) => Promise<void>
   logger: StructuredAgentSessionLogger
 }
 
@@ -375,6 +376,7 @@ export class StructuredAgentSessionQueuedMessageDrain {
         .catch(() => {})
       throw error
     }
+    await this.deps.onSendAdmitted?.(sessionId)
     this.deps.wakeDelivery(sessionId)
   }
 }

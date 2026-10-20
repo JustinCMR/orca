@@ -2,6 +2,7 @@
 // host's mutation context and exposes the draft actions (Send, Delete, Resume, Edit), so the host
 // class stays a description of its surface.
 
+import { clearStructuredAgentSessionSleepMark } from './structured-agent-session-workspace-sleep'
 import type { StructuredAgentSessionMutationContext } from './structured-agent-session-host-mutations'
 import type {
   StructuredAgentSessionCaller,
@@ -40,6 +41,13 @@ export function wireStructuredAgentSessionQueuedMessages(
     currentWork: (sessionId) =>
       hostStructuredAgentSessionCurrentWork({ store: context().deps.store, sessions }, sessionId),
     wakeDelivery: (sessionId) => context().wakeDelivery(sessionId),
+    onSendAdmitted: (sessionId) =>
+      clearStructuredAgentSessionSleepMark(context().deps, sessionId, () => {
+        const journal = sessions.get(sessionId)?.journal
+        if (journal) {
+          context().publish(sessionId, journal)
+        }
+      }),
     // Read lazily, like the rest of this wiring: the host's deps are not assigned yet.
     logger: deferredStructuredAgentSessionLogger(() => context().deps.logger)
   })
