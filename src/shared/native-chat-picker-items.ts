@@ -23,6 +23,8 @@ export type NativeChatPickerItem =
       token: string
       description: string | null
       sources: { sourceKind: SkillSourceKind; skillFilePath: string }[]
+      /** The file the agent selects this skill by, when the agent reported it; a pick sends it. */
+      path?: string
     }
 
 export type NativeChatSkillDiscoverySnapshot = {
@@ -164,22 +166,51 @@ function mergeNativeChatSkills(
   // actually loaded (plugin roots, setting-source filters), and a scanned root
   // the session ignored must not be offered. The scan stays the source of
   // description and scope for the names both know about.
+  // A reported skill with its file is its own row: two skills may share a name, and the pick
+  // tells the agent which file it means.
+  const located = (sessionSkills ?? []).flatMap((skill) =>
+    skill.path && isTokenSafe(skill.name)
+      ? [locatedPickerSkill(skill, skill.path, exactPaths.get(skill.path), skillSigil)]
+      : []
+  )
   const names =
     sessionSkills !== undefined
       ? [
-          ...sessionSkills.map((skill) => skill.name).filter(isTokenSafe),
+          ...sessionSkills
+            .filter((skill) => !skill.path)
+            .map((skill) => skill.name)
+            .filter(isTokenSafe),
           ...[...discovered.keys()].filter((name) => unclassifiedNames.has(name))
         ]
       : [...discovered.keys()]
-  return [...new Set(names)]
-    .map((name) => {
+  return [
+    ...located,
+    ...[...new Set(names)].map((name) => {
       const skill = discovered.get(name) ?? pickerSkill(name, [], skillSigil)
       const reported = sessionSkills?.find((entry) => entry.name === name)?.description
       return skill.description === null && reported
         ? { ...skill, description: sanitizePickerText(reported, 240) }
         : skill
     })
-    .sort(comparePickerSkills)
+  ].sort(comparePickerSkills)
+}
+
+function locatedPickerSkill(
+  skill: NativeChatSessionSkill,
+  path: string,
+  scanned: DiscoveredSkill | undefined,
+  skillSigil: '/' | '$'
+): Extract<NativeChatPickerItem, { kind: 'skill' }> {
+  const description = skill.description ?? scanned?.description
+  return {
+    kind: 'skill',
+    id: `skill:${path}`,
+    name: skill.name,
+    token: `${skillSigil}${skill.name}`,
+    description: description ? sanitizePickerText(description, 240) : null,
+    sources: scanned ? [{ sourceKind: scanned.sourceKind, skillFilePath: path }] : [],
+    path
+  }
 }
 
 function pickerSkill(
@@ -306,48 +337,9 @@ function comparePickerSkills(
   )
 }
 
-// `/` is the composer's trigger for every agent. A draft-leading slash is the one
-// that can dispatch; elsewhere the token starts after whitespace and its query
-// stops at the next `/` so file paths stay prose.
-export const LEADING_SLASH_TRIGGER = /^\/(\S*)$/
-export const MID_PROMPT_SLASH_TRIGGER = /\s\/([^\s/]*)$/
-// An agent whose skills carry their own sigil (Codex `$`) also opens its skills alone on it.
-const SKILL_SIGIL_TRIGGER = /(?:^|\s)\$(\S*)$/
-const COMMON_ENV_VARS = new Set(
-  'PATH HOME USER SHELL PWD TMPDIR TEMP TMP LANG TERM XDG_CONFIG_HOME'.split(' ')
-)
-
-/** The query after a `$` skill sigil at the caret, or null when it reads as shell
- *  syntax (`$HOME`, `$5`, `$(pwd)`, `$?`), by the same rule as Codex's own composer. */
-export function matchSkillSigil(before: string): string | null {
-  const query = before.match(SKILL_SIGIL_TRIGGER)?.[1] ?? null
-  // A bare `$` still opens the full list.
-  if (!query) {
-    return query
-  }
-  const name = query.match(/^[\w:-]*/)?.[0] ?? ''
-  if (name === '' || name === '_' || /^[-\d]/.test(name)) {
-    return null
-  }
-  // Why: a lowercase spelling stays a skill, so a skill named `home` still completes.
-  return !/[a-z]/.test(name) && COMMON_ENV_VARS.has(name.toUpperCase()) ? null : query
-}
-
-/** Replaces the typed trigger token with the item's own token, which for a skill
- *  is the agent-native form whichever trigger opened the menu. */
-export function applyPickerSuggestion(
-  draft: string,
-  caret: number,
-  item: NativeChatPickerItem
-): { draft: string; caret: number; insertedToken: string } {
-  const before = draft.slice(0, caret)
-  const after = draft.slice(caret)
-  const slashMatch = before.match(LEADING_SLASH_TRIGGER) ?? before.match(MID_PROMPT_SLASH_TRIGGER)
-  const query = slashMatch?.[1] ?? (item.kind === 'skill' ? matchSkillSigil(before) : null)
-  if (query === null) {
-    return { draft, caret, insertedToken: '' }
-  }
-  const tokenStart = before.length - query.length - 1
-  const nextBefore = `${before.slice(0, tokenStart)}${item.token} `
-  return { draft: nextBefore + after, caret: nextBefore.length, insertedToken: item.token }
-}
+export {
+  LEADING_SLASH_TRIGGER,
+  MID_PROMPT_SLASH_TRIGGER,
+  applyPickerSuggestion,
+  matchSkillSigil
+} from './native-chat-picker-triggers'

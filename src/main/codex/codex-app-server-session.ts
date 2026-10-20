@@ -42,6 +42,10 @@ export type CodexAppServerInvocation = {
   timeoutMs: number
   /** Stops the session and its child early, as the deadline would. */
   signal?: AbortSignal
+  /** Kill the whole tree while the root still lives, before ending its stdin. For a session that
+   *  lets Codex start plugin work: an unsupervised root that exits on stdin end leaves its git
+   *  children behind, and a tree kill after the root exits is refused. */
+  treeKillOnFinish?: boolean
 }
 
 /** Codex-side absence of the requested app-server RPC surface (old CLI without
@@ -343,6 +347,9 @@ export async function runCodexAppServerSession<T>(
         // A destroyed stdin still leaves the SIGTERM and the close below.
       }
       child.kill('SIGTERM')
+    }
+    if (invocation.treeKillOnFinish && !managed.supervised && !exited) {
+      await managed.terminateTree()
     }
     // Ends stdin, gives a supervisor its full stop time (a direct child 1.5 s), then the tree.
     await managed.close()

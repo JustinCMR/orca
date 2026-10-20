@@ -107,6 +107,19 @@ describe('deriveComposerAutocomplete — one grammar for every agent', () => {
   ]
   const codex = getNativeChatAgentProfile('codex')
 
+  it('lists each skill Codex reported by its file, so a shared name stays two picks', () => {
+    const reported = [
+      { name: 'review', path: '/home/me/.agents/skills/review/SKILL.md' },
+      { name: 'review', path: '/repo/.agents/skills/review/SKILL.md' },
+      { name: 'work-pets:create-pet', path: '/plugins/pets/create-pet/SKILL.md' }
+    ]
+    const discovery = { status: 'ready' as const, skills }
+    const result = deriveComposerAutocomplete('$', 1, [], skills, codex, discovery, null, reported)
+    expect(result.mode === 'slash' ? result.items : []).toEqual(
+      reported.map(({ name, path }) => expect.objectContaining({ token: `$${name}`, path }))
+    )
+  })
+
   it('offers Codex skills under `/`, tokenised as the form Codex invokes', () => {
     const result = deriveComposerAutocomplete('use /type', 9, COMMANDS, skills, codex)
     expect(result.mode).toBe('slash')

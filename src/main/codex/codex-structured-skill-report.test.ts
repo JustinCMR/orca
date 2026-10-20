@@ -1,0 +1,99 @@
+import { describe, expect, it } from 'vitest'
+import { acquired, fakeCodex } from './codex-structured-session-adapter-fixture'
+
+function skill(name: string, path: string, enabled = true) {
+  return { name, path, description: `${name} skill`, scope: 'user', enabled }
+}
+
+const PERSONAL_REVIEW = '/home/me/.agents/skills/review/SKILL.md'
+const REPO_REVIEW = '/work/repo/.agents/skills/review/SKILL.md'
+const PET = '/home/me/.codex/plugins/cache/work/pets/skills/create-pet/SKILL.md'
+
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 5; turn += 1) {
+    await Promise.resolve()
+  }
+}
+
+describe('a running Codex chat lists and runs the skills Codex loaded', () => {
+  it('reports Codex names and files, re-lists on change, and sends a pick by its file', async () => {
+    let listed = [
+      skill('review', PERSONAL_REVIEW),
+      skill('review', REPO_REVIEW),
+      skill('work-pets:create-pet', PET),
+      skill('old', '/home/me/.agents/skills/old/SKILL.md', false)
+    ]
+    const codex = fakeCodex({
+      'skills/list': () => ({ data: [{ cwd: '/work/repo', skills: listed, errors: [] }] }),
+      'turn/start': () => ({ turn: { id: 'turn-1' } })
+    })
+    const adapter = await acquired(codex)
+    await settle()
+
+    const reported = adapter.readCommands('session-1') ?? []
+    // Keeps the menu's own rows, since a report replaces them on every client.
+    expect(reported.filter((row) => row.kind === 'command').map((row) => row.name)).toEqual(
+      expect.arrayContaining(['model', 'clear', 'compact', 'goal'])
+    )
+    expect(reported.filter((row) => row.kind === 'skill')).toEqual([
+      { name: 'review', kind: 'skill', path: PERSONAL_REVIEW, description: 'review skill' },
+      { name: 'review', kind: 'skill', path: REPO_REVIEW, description: 'review skill' },
+      {
+        name: 'work-pets:create-pet',
+        kind: 'skill',
+        path: PET,
+        description: 'work-pets:create-pet skill'
+      }
+    ])
+
+    listed = [...listed, skill('fresh', '/home/me/.agents/skills/fresh/SKILL.md')]
+    codex.connections[0].handlers.onNotification?.('skills/changed', {})
+    await settle()
+    expect(
+      codex.connections[0].calls.findLast((call) => call.method === 'skills/list')
+    ).toMatchObject({ params: { cwds: ['/work/repo'], forceReload: true } })
+    expect(adapter.readCommands('session-1')?.some((row) => row.name === 'fresh')).toBe(true)
+
+    await adapter.dispatch({
+      sessionId: 'session-1',
+      clientMessageId: 'pick-1',
+      fence: 7,
+      body: {
+        kind: 'message',
+        role: 'user',
+        blocks: [{ type: 'text', text: '$review this, then $gone' }],
+        skills: [
+          { name: 'review', path: REPO_REVIEW },
+          // Edited out of the text: not sent.
+          { name: 'work-pets:create-pet', path: PET },
+          // Not a file this Codex loaded: left to its `$name`.
+          { name: 'gone', path: '/elsewhere/gone/SKILL.md' }
+        ]
+      }
+    })
+    expect(
+      codex.connections[0].calls.find((call) => call.method === 'turn/start')?.params?.input
+    ).toEqual([
+      { type: 'text', text: '$review this, then $gone' },
+      { type: 'skill', name: 'review', path: REPO_REVIEW }
+    ])
+  })
+
+  it('reports nothing when Codex has no skills/list, so the client keeps its scan', async () => {
+    const codex = fakeCodex({
+      'skills/list': () => {
+        throw new Error(
+          'Invalid request: unknown variant `skills/list`, expected one of `initialize`'
+        )
+      }
+    })
+    const adapter = await acquired(codex)
+    await settle()
+    codex.connections[0].handlers.onNotification?.('skills/changed', {})
+    await settle()
+    expect(adapter.readCommands('session-1')).toBeUndefined()
+    expect(codex.connections[0].calls.filter((call) => call.method === 'skills/list')).toHaveLength(
+      1
+    )
+  })
+})

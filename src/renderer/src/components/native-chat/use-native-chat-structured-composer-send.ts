@@ -1,3 +1,4 @@
+import { promptSkillRefs } from './native-chat-prompt-document'
 import { useCallback } from 'react'
 import { completeNativeChatStructuredUserAction } from './native-chat-structured-user-action'
 import {
@@ -94,7 +95,12 @@ export function useNativeChatStructuredComposerSend({
         structuredTransport.onSubmitted?.()
       }
       const submitted = readNativeChatComposerDraft(draftScopeKey)
-      await dispatchNativeChatStructuredComposerText(structuredTransport, text, attachments)
+      await dispatchNativeChatStructuredComposerText(
+        structuredTransport,
+        text,
+        attachments,
+        promptSkillRefs(submitted.document)
+      )
         .then(({ accepted, error, refusedWhile, revealsTranscript }) => {
           structuredTransport.onError(error, refusedWhile ? { refusedWhile } : undefined)
           if (!accepted) {

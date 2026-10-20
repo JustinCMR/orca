@@ -1,7 +1,14 @@
-import type { AgentJournalItemBody, AgentJournalMessageItem } from './agent-session-journal-types'
+import type {
+  AgentJournalItemBody,
+  AgentJournalMessageItem,
+  AgentJournalSkillRef
+} from './agent-session-journal-types'
 import type { AgentSessionMutationEnvelope } from './agent-session-wire'
 import type { z } from 'zod'
-import type { SendBody } from './rpc-contract/structured-agent-session-message-params'
+import {
+  MAX_SKILL_REFS,
+  type SendBody
+} from './rpc-contract/structured-agent-session-message-params'
 import { structuredAgentSessionPayloadFingerprint } from './structured-agent-session-mutation'
 
 /** What a send carries beside its message: both join the OPERATION fingerprint, never the body's. */
@@ -89,17 +96,52 @@ export type StructuredAgentSessionAttachment = {
   connectionId?: string
 }
 
-/** The journal body for a message a person sends: its text, then its images. */
+/** The journal body for a message a person sends: its text, then its images, and the skills it
+ *  picked whose `$name` the text still carries. */
 export function structuredAgentSessionSendBody(
   text: string,
-  attachments: readonly StructuredAgentSessionAttachment[]
+  attachments: readonly StructuredAgentSessionAttachment[],
+  skills: readonly AgentJournalSkillRef[] = []
 ): z.infer<typeof SendBody> {
+  const picked = pickedSkillsInText(text, skills)
   return {
     kind: 'message',
     role: 'user',
     blocks: [
       ...(text.trim().length > 0 ? [{ type: 'text' as const, text: text.trimEnd() }] : []),
       ...attachments.map((attachment) => ({ type: 'image-ref' as const, path: attachment.path }))
-    ]
+    ],
+    ...(picked.length > 0 ? { skills: picked } : {})
   }
+}
+
+/** The picked skills a message still names, once per file: an edit can delete a `$name`. */
+export function pickedSkillsInText(
+  text: string,
+  skills: readonly AgentJournalSkillRef[]
+): AgentJournalSkillRef[] {
+  const seen = new Set<string>()
+  return skills
+    .filter((skill) => {
+      if (seen.has(skill.path) || !textNamesSkill(text, skill.name)) {
+        return false
+      }
+      seen.add(skill.path)
+      return true
+    })
+    .slice(0, MAX_SKILL_REFS)
+}
+
+function textNamesSkill(text: string, name: string): boolean {
+  const token = `$${name}`
+  for (let at = text.indexOf(token); at !== -1; at = text.indexOf(token, at + 1)) {
+    // Ends where a skill name can't continue, as Codex reads a mention: `$review,` names `review`.
+    if (
+      (at === 0 || /\s/u.test(text.charAt(at - 1))) &&
+      !/[\w:-]/u.test(text.charAt(at + token.length))
+    ) {
+      return true
+    }
+  }
+  return false
 }
