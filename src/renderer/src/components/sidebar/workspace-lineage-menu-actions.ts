@@ -7,6 +7,7 @@ import { isStructuredTab } from '../../../../shared/structured-agent-session-tab
 import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
 import {
   isStructuredChatSlept,
+  hasUnknownStructuredChat,
   type StructuredChatSleptAtByPaneKey
 } from '@/store/slices/structured-chat-slept-at'
 import { getWorkspaceDeleteLineage } from './workspace-delete-lineage'
@@ -30,6 +31,14 @@ export function hasSleepableWorkspaceActivity(
   worktreeId: string,
   activity: WorkspaceActivityMaps
 ): boolean {
+  if (
+    hasUnknownStructuredChat(
+      activity.unifiedTabsByWorktree[worktreeId],
+      activity.structuredChatSleptAtByPaneKey
+    )
+  ) {
+    return false
+  }
   const tabs = activity.tabsByWorktree[worktreeId] ?? []
   return (
     tabs.some((tab) => tabHasLivePty(activity.ptyIdsByTabId, tab.id)) ||

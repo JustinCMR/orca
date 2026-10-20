@@ -205,7 +205,7 @@ describe('StructuredAgentSessionStatusBridge', () => {
     act(() => feed().emit({ type: 'end' }))
     expect(statuses()).toHaveLength(1)
     expect(statuses()[0]).not.toHaveProperty('structuredHostOwned')
-    expect(useAppStore.getState().structuredChatSleptAtByPaneKey).toEqual({})
+    expect(Object.values(useAppStore.getState().structuredChatSleptAtByPaneKey)).toEqual([null])
   })
 
   it('maps each host status onto the sidebar agent state', async () => {
@@ -691,7 +691,7 @@ describe('StructuredAgentSessionStatusBridge', () => {
     expect(state().structuredChatSleptAtByPaneKey).toEqual({ [paneKey]: 5 })
     expect(sleepable()).toBe(false)
     act(() => feed().emit({ type: 'status', session: summary({ updatedAt: 3, sleptAt: 5 }) }))
-    expect(state().structuredChatSleptAtByPaneKey).toEqual({})
+    expect(Object.values(state().structuredChatSleptAtByPaneKey)).toEqual([null])
   })
 
   it('drops the status and the feed when the last structured tab closes', async () => {

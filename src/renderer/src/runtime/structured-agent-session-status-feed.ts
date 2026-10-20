@@ -5,6 +5,7 @@
 // keeps the cached summaries and reconnects; a fresh snapshot merges over them.
 // Which sessions are listed is the tab map's decision, so the feed never retracts a summary.
 
+import { AGENT_SESSION_WORKSPACE_SLEEP_MARK_RUNTIME_CAPABILITY } from '../../../shared/agent-session-workspace-sleep'
 import type { AgentSessionStatusEvent } from '../../../shared/agent-session-wire'
 import {
   foldAgentSessionStatusEvent,
@@ -21,6 +22,7 @@ export type StructuredAgentSessionStatusSnapshot = AgentSessionStatusSnapshot
 export type StructuredAgentSessionStatusFeedOwner = {
   activate: () => () => void
   getSnapshot: () => StructuredAgentSessionStatusSnapshot
+  getSessionSleepState: (sessionId: string) => number | null | undefined
   getSessionObservation: (sessionId: string) => 'live' | 'unverifiable'
   subscribe: (listener: () => void) => () => void
 }
@@ -41,6 +43,7 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
   const confirmedSessions = new Set<string>()
   const listeners = new Set<() => void>()
   const activations = new Set<symbol>()
+  let sleepResolved = false
   let generation = 0
   let handle: { unsubscribe: () => void } | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -57,6 +60,7 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
   }
   const applyEvent = (event: AgentSessionStatusEvent): void => {
     if (event.type === 'snapshot') {
+      sleepResolved = true
       reconnectAttempt = 0
       for (const session of event.sessions) {
         confirmedSessions.add(session.sessionId)
@@ -106,6 +110,7 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
       return
     }
     generation += 1
+    sleepResolved = true
     confirmedSessions.clear()
     revokeSnapshotOwnership()
     emit()
@@ -154,13 +159,23 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
       return
     }
     const environmentId = target.environmentId
-    void runtimeEnvironmentSupportsCapability(
-      environmentId,
-      AGENT_SESSION_STATUS_FEED_RUNTIME_CAPABILITY
-    )
-      .then((supported) => {
+    void Promise.all([
+      runtimeEnvironmentSupportsCapability(
+        environmentId,
+        AGENT_SESSION_STATUS_FEED_RUNTIME_CAPABILITY
+      ),
+      runtimeEnvironmentSupportsCapability(
+        environmentId,
+        AGENT_SESSION_WORKSPACE_SLEEP_MARK_RUNTIME_CAPABILITY
+      )
+    ])
+      .then(([supported, marksSleep]) => {
         if (!active(candidate)) {
           return
+        }
+        if (!marksSleep || !supported) {
+          sleepResolved = true
+          emit()
         }
         // A host without the method is terminal, not a fault: retrying would relay-probe
         // forever. A failed probe is not an answer, so that path still reconnects.
@@ -198,6 +213,14 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
       }
     },
     getSnapshot: () => snapshot,
+    getSessionSleepState: (sessionId) => {
+      const summary = snapshot.get(sessionId)
+      if (confirmedSessions.has(sessionId) && summary) {
+        return summary.hostExecutionOwned ? null : (summary.sleptAt ?? null)
+      }
+      // The bridge retains prior answers; an unanswered chat falls back awake on failure.
+      return sleepResolved ? null : undefined
+    },
     getSessionObservation: (sessionId) =>
       confirmedSessions.has(sessionId) ? 'live' : 'unverifiable',
     subscribe: (listener) => {

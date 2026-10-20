@@ -78,7 +78,7 @@ describe('structured agent session status feed', () => {
 
     await vi.advanceTimersByTimeAsync(60_000)
     expect(mocks.subscribeStatus).not.toHaveBeenCalled()
-    expect(mocks.supportsCapability).toHaveBeenCalledOnce()
+    expect(mocks.supportsCapability).toHaveBeenCalledTimes(2)
   })
 
   it('subscribes once the remote host advertises the status feed', async () => {
@@ -94,10 +94,10 @@ describe('structured agent session status feed', () => {
     getStructuredAgentSessionStatusFeed(REMOTE).activate()
 
     await vi.advanceTimersByTimeAsync(0)
-    expect(mocks.supportsCapability).toHaveBeenCalledOnce()
+    expect(mocks.supportsCapability).toHaveBeenCalledTimes(2)
 
     await vi.advanceTimersByTimeAsync(300)
-    expect(mocks.supportsCapability).toHaveBeenCalledTimes(2)
+    expect(mocks.supportsCapability).toHaveBeenCalledTimes(4)
     expect(mocks.subscribeStatus).not.toHaveBeenCalled()
   })
 

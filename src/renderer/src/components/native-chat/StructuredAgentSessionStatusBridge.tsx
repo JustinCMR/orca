@@ -38,6 +38,7 @@ import {
   structuredAgentSessionTargetForHost
 } from '@/runtime/structured-agent-session-owner'
 import { getStructuredAgentSessionStatusFeed } from '@/runtime/structured-agent-session-status-feed'
+import { useStructuredChatSleepProjection } from './structured-chat-sleep-projection'
 import { getStructuredAgentSessionTabs, type StructuredTab } from './structured-agent-session-tabs'
 
 // Re-exported so the bridge stays the one import site its consumers already know.
@@ -317,6 +318,7 @@ function StructuredAgentSessionStatusProjection({
 }): React.JSX.Element | null {
   const owner = useAppStore((state) => structuredAgentSessionOwnerForTab(state, tab))
   const target = useMemo(() => structuredAgentSessionTargetForHost(owner), [owner])
+  useStructuredChatSleepProjection(tab, target)
   return target ? <StructuredAgentSessionOwnedStatusProjection tab={tab} target={target} /> : null
 }
 
@@ -328,18 +330,6 @@ function StructuredAgentSessionOwnedStatusProjection({
   target: RuntimeClientTarget
 }): null {
   const { summary, observation } = useStructuredAgentSessionStatusSummary(tab.entityId, target)
-  const paneKey = structuredAgentSessionPaneKey(tab.id, tab.entityId)
-  // A chat its host runs again is awake whatever its mark says.
-  const sleptAt = summary?.hostExecutionOwned ? undefined : summary?.sleptAt
-  useEffect(() => {
-    if (observation === 'live') {
-      useAppStore.getState().setStructuredChatSleptAt(paneKey, sleptAt)
-    }
-  }, [paneKey, sleptAt, observation])
-  useEffect(
-    () => () => useAppStore.getState().setStructuredChatSleptAt(paneKey, undefined),
-    [paneKey]
-  )
   const launchFailed =
     useStructuredAgentSessionLaunchLifecycle(tab.worktreeId, tab.entityId) === 'failed'
   const failedAt = useStructuredAgentSessionLaunchFailedAt(tab.entityId)

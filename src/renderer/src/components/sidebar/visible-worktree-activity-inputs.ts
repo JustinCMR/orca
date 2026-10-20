@@ -1,12 +1,10 @@
 import type { BrowserWorkspace } from '../../../../shared/browser-workspace-types'
+import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
 import type { Tab } from '../../../../shared/tab-types'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import { getStructuredAgentSessionTabs } from '@/components/native-chat/structured-agent-session-tabs'
 import { createWorktreeTabBucketProjection } from '@/lib/worktree-tab-bucket-projection'
-import {
-  isStructuredChatSlept,
-  type StructuredChatSleptAtByPaneKey
-} from '@/store/slices/structured-chat-slept-at'
+import type { StructuredChatSleptAtByPaneKey } from '@/store/slices/structured-chat-slept-at'
 
 export type TerminalActivityTab = Pick<TerminalTab, 'id'>
 export type BrowserActivityTab = Pick<BrowserWorkspace, 'id'>
@@ -71,7 +69,11 @@ export function getWorktreeIdsWithStructuredChat(
   }
   const worktreeIds = new Set(
     getStructuredAgentSessionTabs(unifiedTabsByWorktree)
-      .filter((tab) => !isStructuredChatSlept(structuredChatSleptAtByPaneKey, tab))
+      .filter(
+        (tab) =>
+          structuredChatSleptAtByPaneKey[structuredAgentSessionPaneKey(tab.id, tab.entityId)] ===
+          null
+      )
       .map((tab) => tab.worktreeId)
   )
   const bySleptAt = structuredChatWorktreeIds.get(unifiedTabsByWorktree) ?? new WeakMap()

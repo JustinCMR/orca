@@ -166,7 +166,9 @@ describe('hasSleepableWorkspaceActivity', () => {
     const activity = (
       agentStatusByPaneKey: Record<string, { structuredHostOwned?: true }>,
       tab: Tab = chat,
-      sleptAt: Record<string, number> = {}
+      sleptAt: Record<string, number | null> = {
+        [structuredAgentSessionPaneKey(chat.id, chat.entityId)]: null
+      }
     ) =>
       hasSleepableWorkspaceActivity('wt-1', {
         tabsByWorktree: {},
@@ -176,6 +178,7 @@ describe('hasSleepableWorkspaceActivity', () => {
         agentStatusByPaneKey,
         structuredChatSleptAtByPaneKey: sleptAt
       })
+    expect(activity({}, chat, {})).toBe(false)
     expect(activity(hostHeld(chat))).toBe(true)
     expect(activity({})).toBe(true)
     // An ended chat stays sleepable until its host marks that exact tab's session slept.
