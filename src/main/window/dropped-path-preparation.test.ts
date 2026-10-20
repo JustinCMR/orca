@@ -240,18 +240,21 @@ describe('dropped path preparation through the shared copy queue', () => {
         hold(() => AgentSessionAttachmentStore.prototype.storeFile.apply(store, args))
       )
     }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onTestFinished(() => vi.useRealTimers())
     const enqueue = localQueue(env, async () => store, 100)
     const abandoned = enqueue({ paths, consumer: 'local-chat' })
     await started.promise
     const following = enqueue({ paths: [source], consumer: 'agent' })
+    await vi.advanceTimersByTimeAsync(100)
     await expect(abandoned).resolves.toMatchObject({
       paths: [],
       failures: [{ commonReason: 'timed-out' }]
     })
     expect(await readFile((await following).paths[0], 'utf8')).toBe('image')
+    vi.useRealTimers()
     await vi.waitFor(async () => expect(await readdir(env.copyRoot)).toHaveLength(1))
     release.resolve('done')
-    await settle()
     const final = await completed.promise
     expect(await readFile(final, 'utf8')).toBe('image')
     expect(store.isUploadInFlight(basename(dirname(final)))).toBe(false)
