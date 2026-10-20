@@ -18,11 +18,8 @@ import { needsElectronNoSandbox } from './electron-sandbox-switch'
 import { getMacAppBundlePath } from './mac-app-update-bundle'
 import { getPlatformUserDataPath } from './metadata'
 import { isSameUserDataPath } from '../../shared/serve-user-data-path'
-import {
-  readServeUpdateHandoffSync,
-  resumeInterruptedServeUpdate,
-  superviseForegroundServe
-} from './serve-update-supervisor'
+import { readServeUpdateHandoffSync } from './serve-update-handoff-file'
+import { resumeInterruptedServeUpdate, superviseForegroundServe } from './serve-update-supervisor'
 import { RuntimeClientError } from './types'
 import { SERVE_RUNTIME_ELECTRON, SERVE_RUNTIME_ENV } from '../../shared/orcad-local-serve-selection'
 import { findBundledWebClientRoot } from '../../shared/bundled-web-client-root'

@@ -1,16 +1,15 @@
 import type { ChildProcessHandle, ProcessSpec } from '@orca/process-host/process-spec'
-import { readFileSync } from 'node:fs'
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import {
-  parseServeSupervisorMessage,
-  parseServeUpdateHandoffState,
-  type ServeUpdateHandoffState
-} from '../../shared/serve-update-handoff'
+import { parseServeSupervisorMessage } from '../../shared/serve-update-handoff'
 import {
   QUIT_RENDERER_ACK_TIMEOUT_MS,
   WILL_QUIT_TEARDOWN_DEADLINE_MS
 } from '../../shared/quit-teardown-deadline'
 import { serveSignalExitError } from './serve-signal-exit-diagnostic'
+import {
+  completeServeUpdateHandoff,
+  readServeUpdateHandoff,
+  recordServeUpdateHandoffFailure
+} from './serve-update-handoff-file'
 import { waitForMacBundleVersion } from './mac-app-update-bundle'
 import {
   mayRespawn,
@@ -260,54 +259,4 @@ function waitForForegroundChild(
     })
     child.once('exit', handleExit)
   })
-}
-
-export async function readServeUpdateHandoff(
-  handoffPath: string
-): Promise<ServeUpdateHandoffState | null> {
-  try {
-    return parseServeUpdateHandoffState(JSON.parse(await readFile(handoffPath, 'utf8')))
-  } catch {
-    return null
-  }
-}
-
-export function readServeUpdateHandoffSync(handoffPath: string): ServeUpdateHandoffState | null {
-  try {
-    return parseServeUpdateHandoffState(JSON.parse(readFileSync(handoffPath, 'utf8')))
-  } catch {
-    return null
-  }
-}
-
-export async function completeServeUpdateHandoff(
-  handoffPath: string,
-  state: InstallRequestedHandoff,
-  runtimeId: string
-): Promise<void> {
-  await writeServeUpdateHandoffState(handoffPath, {
-    ...state,
-    phase: 'completed',
-    runtimeId
-  })
-  await unlink(handoffPath).catch(() => undefined)
-}
-
-export async function recordServeUpdateHandoffFailure(
-  handoffPath: string,
-  state: Extract<ServeUpdateHandoffState, { phase: 'install-requested' }>,
-  reason: string
-): Promise<void> {
-  const failedState: ServeUpdateHandoffState = { ...state, phase: 'failed', reason }
-  await writeServeUpdateHandoffState(handoffPath, failedState)
-  process.stderr.write(`[serve] update handoff failed: ${reason}\n`)
-}
-
-async function writeServeUpdateHandoffState(
-  handoffPath: string,
-  state: ServeUpdateHandoffState
-): Promise<void> {
-  const temporaryPath = `${handoffPath}.${process.pid}.tmp`
-  await writeFile(temporaryPath, JSON.stringify(state), { mode: 0o600 })
-  await rename(temporaryPath, handoffPath)
 }
