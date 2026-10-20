@@ -1,4 +1,6 @@
 import { getAgentLabel } from '@/lib/agent-catalog'
+import { formatAgentTypeLabel } from '../../../../shared/agent-type-label'
+import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import { MAX_SKILL_REFS } from '../../../../shared/rpc-contract/structured-agent-session-message-params'
 import { SkillRefLimitError } from '../../../../shared/structured-agent-session-send-mutation'
 import { promptSkillRefs } from './native-chat-prompt-document'
@@ -133,7 +135,13 @@ export function useNativeChatStructuredComposerSend({
               ? translate(
                   'components.native-chat.composer.tooManySkills',
                   'Your message was not sent to {{agent}}. Keep at most {{limit}} selected skill files and try again.',
-                  { agent: getAgentLabel(agent), limit: MAX_SKILL_REFS }
+                  {
+                    agent:
+                      isTuiAgent(agent) || agent === 'dsb'
+                        ? getAgentLabel(agent)
+                        : formatAgentTypeLabel(agent),
+                    limit: MAX_SKILL_REFS
+                  }
                 )
               : agentSessionWriteNoticeText([hostCommand ? 'notDoneCommand' : 'notDoneSend'])
           )
