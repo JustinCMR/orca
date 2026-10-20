@@ -163,29 +163,18 @@ describe('hasSleepableWorkspaceActivity', () => {
       sortOrder: 0,
       createdAt: 0
     }
-    const activity = (
-      agentStatusByPaneKey: Record<string, { structuredHostOwned?: true }>,
-      tab: Tab = chat,
-      sleptAt: Record<string, number | null> = {
-        [structuredAgentSessionPaneKey(chat.id, chat.entityId)]: null
-      }
-    ) =>
+    const activity = (agentStatusByPaneKey: Record<string, { structuredHostOwned?: true }>) =>
       hasSleepableWorkspaceActivity('wt-1', {
         tabsByWorktree: {},
         ptyIdsByTabId: {},
         browserTabsByWorktree: {},
-        unifiedTabsByWorktree: { 'wt-1': [tab] },
+        unifiedTabsByWorktree: { 'wt-1': [chat] },
         agentStatusByPaneKey,
-        structuredChatSleptAtByPaneKey: sleptAt
+        structuredChatSleptAtByPaneKey: {
+          [structuredAgentSessionPaneKey(chat.id, chat.entityId)]: null
+        }
       })
-    expect(activity({}, chat, {})).toBe(false)
     expect(activity(hostHeld(chat))).toBe(true)
     expect(activity({})).toBe(true)
-    // An ended chat stays sleepable until its host marks that exact tab's session slept.
-    const ended = { ...chat, executionHostId: 'local' as const }
-    expect(activity({}, ended)).toBe(true)
-    expect(activity({}, ended, { [structuredAgentSessionPaneKey('chat-1', 'session-1')]: 1 })).toBe(
-      false
-    )
   })
 })

@@ -174,7 +174,7 @@ it('keeps a send admitted after the host Sleep close alive', async () => {
 })
 
 it('marks only the chats a Sleep that asked proved stopped, until the next send', async () => {
-  const { host, store, acquire } = hostTestState()
+  const { host, store, acquire, root } = hostTestState()
   await attach()
   const send = async (text: string) => {
     const body = hostTestMessage(text)
@@ -193,53 +193,22 @@ it('marks only the chats a Sleep that asked proved stopped, until the next send'
   })
   const sleptAt = store.getRecord('session-alpha')?.sleptAt
   expect(sleptAt).toEqual(expect.any(Number))
-  expect(host.readStatusSummary('session-alpha')?.sleptAt).toBe(sleptAt)
   expect(await host.send(CALLER, previous)).toMatchObject({ ok: true, replayed: true })
   expect(store.getRecord('session-alpha')?.sleptAt).toBe(sleptAt)
 
-  await send('wake up')
-  expect(store.getRecord('session-alpha')?.sleptAt).toBeUndefined()
-  expect(host.readStatusSummary('session-alpha')?.sleptAt).toBeUndefined()
-  await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(3))
-
-  // A send admitted before the final receipt step leaves the chat awake.
-  const close = host['lifetime'].closeForWorkspaceSleep
-  vi.spyOn(host['lifetime'], 'closeForWorkspaceSleep').mockImplementation(async (...args) => {
-    const result = await close(...args)
-    await send('right after Sleep')
-    return result
-  })
-  expect(await host.sleepWorkspace('workspace-1', true)).toEqual({ stoppedSessionIds: [] })
-  await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(4))
-  expect(store.getRecord('session-alpha')?.sleptAt).toBeUndefined()
-})
-
-it('marks no chat whose stop it could not prove', async () => {
-  const { host, store } = hostTestState()
-  await attach()
-  host.deps.adapter.closeSession = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
-  expect(await host.sleepWorkspace('workspace-1', true)).toMatchObject({
-    failures: [{ sessionId: 'session-alpha', reason: 'stop-unverifiable' }]
-  })
-  expect(store.getRecord('session-alpha')?.sleptAt).toBeUndefined()
-})
-
-it('restores a slept chat listed by its tab still marked after a restart', async () => {
-  const { host, store, root } = hostTestState()
-  await attach()
-  await store.setSessionTabVisibility('session-alpha', true, 'tab-alpha')
-  await host.sleepWorkspace('workspace-1', true)
-  const sleptAt = store.getRecord('session-alpha')?.sleptAt
-  expect(sleptAt).toEqual(expect.any(Number))
-
+  await store.setSessionTabVisibility(SESSION, true, 'tab-alpha')
   const restarted = new StructuredAgentSessionHost({
     ...host.deps,
     store: await openTestAgentSessionRecordStore(root)
   })
   const listed = restarted.getPersistedVisibleSessionTabIndex()
-  expect(listed.sessionIds).toEqual(['session-alpha'])
+  expect(listed.sessionIds).toEqual([SESSION])
   await restarted.restoreReadableSessions(listed.sessionIds)
-  expect(restarted.readStatusSummary('session-alpha')?.sleptAt).toBe(sleptAt)
+  expect(restarted.readStatusSummary(SESSION)?.sleptAt).toBe(sleptAt)
+
+  await send('wake up')
+  expect(store.getRecord('session-alpha')?.sleptAt).toBeUndefined()
+  expect(host.readStatusSummary('session-alpha')?.sleptAt).toBeUndefined()
 })
 
 it('returns the receipt for a stopped child whose provider reports its own end', async () => {
@@ -275,44 +244,42 @@ it('omits an unproven workspace child from the stop receipt', async () => {
   await attach()
   host.deps.adapter.closeSession = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
 
-  expect(await host.sleepWorkspace('workspace-1')).toEqual({
+  expect(await host.sleepWorkspace('workspace-1', true)).toEqual({
     stoppedSessionIds: [],
     failures: [{ sessionId: SESSION, reason: 'stop-unverifiable' }]
   })
   expect(store.getRecord(SESSION)).not.toBeNull()
+  expect(store.getRecord(SESSION)?.sleptAt).toBeUndefined()
 })
 
-it.each(['running', 'failed'] as const)(
-  'does not re-mark a chat after a newer %s send',
-  async (state) => {
-    const { host, acquire, store } = hostTestState()
-    await attach()
-    host.deps.adapter.closeSession = vi.fn(async () => true)
-    await vi.waitFor(() => expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false))
-    const close = host['lifetime'].closeForWorkspaceSleep
-    vi.spyOn(host['lifetime'], 'closeForWorkspaceSleep').mockImplementation(async (...args) => {
-      const result = await close(...args)
-      if (state === 'failed') {
-        acquire.mockRejectedValueOnce(new Error('provider unavailable'))
-      }
-      const body = hostTestMessage('newer send')
-      // The later work exists once the send is accepted, not merely once it is queued.
-      const sent = host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
-      expect(await sent).toMatchObject({ ok: true })
-      if (state === 'failed') {
-        await vi.waitFor(() => {
-          expect(host['runtimeState'].startFlights.has(SESSION)).toBe(false)
-          expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false)
-          expect(host['sessions'].get(SESSION)?.journal.pendingSubmissions()).toEqual([])
-        })
-      }
-      return result
-    })
+it.each(['running', 'failed'] as const)('keeps a newer %s send awake', async (state) => {
+  const { host, acquire, store } = hostTestState()
+  await attach()
+  host.deps.adapter.closeSession = vi.fn(async () => true)
+  await vi.waitFor(() => expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false))
+  const close = host['lifetime'].closeForWorkspaceSleep
+  vi.spyOn(host['lifetime'], 'closeForWorkspaceSleep').mockImplementation(async (...args) => {
+    const result = await close(...args)
+    if (state === 'failed') {
+      acquire.mockRejectedValueOnce(new Error('provider unavailable'))
+    }
+    const body = hostTestMessage('newer send')
+    // The later work exists once the send is accepted, not merely once it is queued.
+    const sent = host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
+    expect(await sent).toMatchObject({ ok: true })
+    if (state === 'failed') {
+      await vi.waitFor(() => {
+        expect(host['runtimeState'].startFlights.has(SESSION)).toBe(false)
+        expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false)
+        expect(host['sessions'].get(SESSION)?.journal.pendingSubmissions()).toEqual([])
+      })
+    }
+    return result
+  })
 
-    expect(await host.sleepWorkspace('workspace-1', true)).toEqual({ stoppedSessionIds: [] })
-    expect(store.getRecord(SESSION)?.sleptAt).toBeUndefined()
-  }
-)
+  expect(await host.sleepWorkspace('workspace-1', true)).toEqual({ stoppedSessionIds: [] })
+  expect(store.getRecord(SESSION)?.sleptAt).toBeUndefined()
+})
 
 // A start runs outside the chat's lane, so Sleep reaches it through the start's own abort.
 it('stops an agent that is still starting', async () => {
@@ -375,7 +342,9 @@ it('sleeps only proven ended chats after idle eviction or restart', async () => 
       expect(rig.adapter.closeSession).toHaveBeenCalledWith(SESSION)
       expect(rig.host.hasSession(SESSION)).toBe(false)
     })
+    expect(rig.store.getRecord(SESSION)?.sleptAt).toBeUndefined()
     expect(await rig.host.sleepWorkspace('workspace-1')).toEqual({ stoppedSessionIds: [SESSION] })
+    expect(rig.store.getRecord(SESSION)?.sleptAt).toBeUndefined()
     await rig.restart()
     await rig.host.restoreReadableSessions()
     expect(await rig.host.sleepWorkspace('workspace-1')).toEqual({ stoppedSessionIds: [SESSION] })

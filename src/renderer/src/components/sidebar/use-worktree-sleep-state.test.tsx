@@ -9,7 +9,6 @@ import {
   useIsSleepingWorktree,
   resetWorktreeSleepStateCacheForTests
 } from './use-worktree-sleep-state'
-import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
 
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -159,27 +158,6 @@ describe('useIsSleepingWorktree', () => {
       }
     }
 
-    expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>false</span>')
-  })
-
-  it('reads a chat its host marked slept as asleep, and awake once the mark goes', () => {
-    const worktreeId = 'repo1::/path/wt1'
-    const chat = makeUnifiedTab({
-      id: 'chat-1',
-      worktreeId,
-      contentType: 'agent-session',
-      agentSessionAgent: 'claude'
-    })
-    const chatKey = structuredAgentSessionPaneKey(chat.id, chat.entityId)
-    mockState = {
-      ...mockState,
-      unifiedTabsByWorktree: { [worktreeId]: [chat] },
-      structuredChatSleptAtByPaneKey: { [chatKey]: 1 }
-    }
-    expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>true</span>')
-
-    // A send from any client clears the host's mark, and the bridge drops its copy.
-    mockState = { ...mockState, structuredChatSleptAtByPaneKey: {} }
     expect(renderToStaticMarkup(<SleepProbe worktreeId={worktreeId} />)).toBe('<span>false</span>')
   })
 

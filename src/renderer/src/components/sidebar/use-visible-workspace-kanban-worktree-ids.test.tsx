@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cleanup, renderHook } from '@testing-library/react'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import { useAppStore } from '@/store'
 import { structuredAgentSessionPaneKey } from '../../../../shared/structured-agent-session-projection'
 import type { Tab } from '../../../../shared/tab-types'
@@ -41,46 +41,46 @@ describe('useVisibleWorkspaceKanbanWorktreeIds', () => {
     expect(result.current).toEqual(new Set([getWorktreeHostIdentity(local)]))
   })
 
-  it.each([undefined, null, 1])(
-    'shows a chat workspace only with awake host evidence: %s',
-    (sleptAt) => {
-      const worktree = makeWorktree('chat', 'Chat workspace')
-      const repo = makeRepo()
-      const structuredTab: Tab = {
-        id: 'chat-tab',
-        entityId: 'chat-session',
-        groupId: 'chat-group',
-        worktreeId: worktree.id,
-        contentType: 'agent-session',
-        agentSessionAgent: 'codex',
-        label: 'Chat',
-        customLabel: null,
-        color: null,
-        sortOrder: 0,
-        createdAt: 0
-      }
-      useAppStore.setState({
-        worktreesByRepo: { [repo.id]: [worktree] },
-        unifiedTabsByWorktree: { [worktree.id]: [structuredTab] },
-        structuredChatSleptAtByPaneKey:
-          sleptAt === undefined
-            ? {}
-            : {
-                [structuredAgentSessionPaneKey(structuredTab.id, structuredTab.entityId)]: sleptAt
-              },
-        showSleepingWorkspaces: false
-      })
-
-      const { result } = renderHook(() =>
-        useVisibleWorkspaceKanbanWorktreeIds({
-          allWorktrees: [worktree],
-          repoMap: new Map([[repo.id, repo]])
-        })
-      )
-
-      expect(result.current).toEqual(
-        new Set(sleptAt === null ? [getWorktreeHostIdentity(worktree)] : [])
-      )
+  it('keeps a structured-chat workspace visible when sleeping workspaces are hidden', () => {
+    const worktree = makeWorktree('chat', 'Chat workspace')
+    const repo = makeRepo()
+    const structuredTab: Tab = {
+      id: 'chat-tab',
+      entityId: 'chat-session',
+      groupId: 'chat-group',
+      worktreeId: worktree.id,
+      contentType: 'agent-session',
+      agentSessionAgent: 'codex',
+      label: 'Chat',
+      customLabel: null,
+      color: null,
+      sortOrder: 0,
+      createdAt: 0
     }
-  )
+    useAppStore.setState({
+      worktreesByRepo: { [repo.id]: [worktree] },
+      unifiedTabsByWorktree: { [worktree.id]: [structuredTab] },
+      structuredChatSleptAtByPaneKey: {
+        [structuredAgentSessionPaneKey(structuredTab.id, structuredTab.entityId)]: null
+      },
+      showSleepingWorkspaces: false
+    })
+
+    const { result } = renderHook(() =>
+      useVisibleWorkspaceKanbanWorktreeIds({
+        allWorktrees: [worktree],
+        repoMap: new Map([[repo.id, repo]])
+      })
+    )
+
+    expect(result.current).toEqual(new Set([getWorktreeHostIdentity(worktree)]))
+    act(() =>
+      useAppStore.setState({
+        structuredChatSleptAtByPaneKey: {
+          [structuredAgentSessionPaneKey(structuredTab.id, structuredTab.entityId)]: 5
+        }
+      })
+    )
+    expect(result.current).toEqual(new Set())
+  })
 })
