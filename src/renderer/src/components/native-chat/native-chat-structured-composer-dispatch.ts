@@ -20,6 +20,9 @@ export async function dispatchNativeChatStructuredComposerText(
   if (handled) {
     return { ...command, revealsTranscript: false }
   }
-  const admission = transport.send(prompt, attachments, skills.length > 0 ? { skills } : undefined)
+  const admission =
+    skills.length > 0
+      ? transport.send(prompt, attachments, { skills })
+      : transport.send(prompt, attachments)
   return { accepted: admission !== false, error: null, revealsTranscript: admission === true }
 }
