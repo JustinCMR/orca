@@ -45,6 +45,7 @@ export function registerPtyConnectionTerminalInputGatingTests(): void {
       createdTransportOptions = []
       storeSubscribers = []
       mockStoreState = createInitialStoreState(() => mockStoreState)
+      Object.assign(mockStoreState, { settleTerminalTabRecovery: vi.fn() })
       bindPtyConnectionTestMocks({
         getState: () => mockStoreState,
         getTransportQueue: () => transportFactoryQueue,

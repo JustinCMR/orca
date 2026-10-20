@@ -378,7 +378,7 @@ export function registerPtyConnectionDeferredReattachLiveOutputTests(): void {
       expect(pane.terminal.buffer.active.viewportY).toBe(100)
     })
 
-    it.each(['tab-pty', undefined])('delivers ended output: %s', async (restoredId) => {
+    it.each(['tab-pty', undefined])('ended bytes with retained PTY: %s', async (restoredId) => {
       const { connectPanePty } = await import('./pty-connection')
       const transport = createMockTransport('tab-pty')
       transport.connect.mockImplementation(

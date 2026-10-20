@@ -273,7 +273,10 @@ describe('shell showing through a hibernation kill', () => {
     pane.finishCommand()
     await vi.advanceTimersByTimeAsync(350)
 
-    expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(pane.paneKey)
+    expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(
+      pane.paneKey,
+      expect.objectContaining({ record: pane.record })
+    )
   })
 
   it('still clears a record beside a PTY that is not being hibernated', async () => {
@@ -282,7 +285,10 @@ describe('shell showing through a hibernation kill', () => {
     pane.finishCommand()
     await vi.advanceTimersByTimeAsync(350)
 
-    expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(pane.paneKey)
+    expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(
+      pane.paneKey,
+      expect.objectContaining({ record: pane.record })
+    )
   })
 
   it('does not protect a replacement record with the old wake target', async () => {
@@ -297,6 +303,9 @@ describe('shell showing through a hibernation kill', () => {
     pane.finishCommand()
     await vi.advanceTimersByTimeAsync(350)
 
-    expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(pane.paneKey)
+    expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(
+      pane.paneKey,
+      expect.objectContaining({ record: { ...pane.record, updatedAt: 2 } })
+    )
   })
 })
