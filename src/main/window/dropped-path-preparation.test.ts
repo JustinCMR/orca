@@ -241,7 +241,7 @@ describe('dropped path preparation through the shared copy queue', () => {
       )
     }
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    onTestFinished(() => vi.useRealTimers())
+    onTestFinished(() => void vi.useRealTimers())
     const enqueue = localQueue(env, async () => store, 100)
     const abandoned = enqueue({ paths, consumer: 'local-chat' })
     await started.promise
