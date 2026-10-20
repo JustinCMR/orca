@@ -25,6 +25,10 @@ import { createWslOrcadHostTransport } from './wsl-orcad-host-transport'
 import { resolveWslOrcadPairing } from './wsl-orcad-pairing-identity'
 import { trackWslOrcadHostEnvironment } from './wsl-orcad-host-environments'
 import {
+  WslOrcadConnectionSupersededError,
+  WslOrcadLaunchDeferredError
+} from './wsl-orcad-connection-errors'
+import {
   listenWslOrcadStdioBridge,
   type WslOrcadStdioBridgeOptions
 } from './wsl-orcad-stdio-bridge'
@@ -44,23 +48,6 @@ export type WslOrcadConnection = {
   /** An app update the incumbent `fullVersion` is waiting to take (live terminals). */
   deferredUpdate: WslOrcadDeferredUpdate | null
   close(): Promise<void>
-}
-
-type WslOrcadDeferredLaunch = Extract<WslOrcadLaunch, { outcome: 'deferred' }>
-
-/** orcad installed an update it may not activate yet (live terminals); nothing is listening. */
-export class WslOrcadLaunchDeferredError extends Error {
-  constructor(readonly launch: WslOrcadDeferredLaunch) {
-    super(launch.reason)
-    this.name = 'WslOrcadLaunchDeferredError'
-  }
-}
-
-export class WslOrcadConnectionSupersededError extends Error {
-  constructor(distro: string) {
-    super(`The connection to the WSL distro ${distro} was closed while it was being opened.`)
-    this.name = 'WslOrcadConnectionSupersededError'
-  }
 }
 
 export type WslOrcadConnectOptions = {
@@ -201,12 +188,9 @@ export class WslOrcadConnectionManager {
     const generation = this.generation(key)
     const environmentId = options.environmentId ?? defaultWslOrcadEnvironmentId(distro)
     const label = options.label ?? distro
-    const transport = (this.dependencies.createTransport ?? defaultTransport)({
-      kind: 'wsl',
-      id: environmentId,
-      distro,
-      label
-    })
+    const target: WslOrcadHostTarget = { kind: 'wsl', id: environmentId, distro, label }
+    const transport =
+      this.dependencies.createTransport?.(target) ?? createWslOrcadHostTransport({ target })
     // Every call relaunches a stopped orcad, so a distro restart is recovered here.
     const launch = await (this.dependencies.deployAndLaunch ?? deployAndLaunchWslOrcad)(distro, {
       environmentId,
@@ -234,12 +218,21 @@ export class WslOrcadConnectionManager {
       current.connection.environmentId === environmentId
     ) {
       const pairingOffer = await resolveWslOrcadPairing(
-        launch, current.connection.localPort, paired, this.dependencies.verifyIdentity
+        launch,
+        current.connection.localPort,
+        paired,
+        this.dependencies.verifyIdentity
       )
       if (this.generation(key) !== generation) {
         throw new WslOrcadConnectionSupersededError(distro)
       }
-      return this.refreshOffer(key, current, launch, pairingOffer, options.status ? status.ready : null)
+      return this.refreshOffer(
+        key,
+        current,
+        launch,
+        pairingOffer,
+        options.status ? status.ready : null
+      )
     }
     // orcad moved ports (or this is the first connect): the old bridge dials a dead port.
     const preferredLocalPort = current?.connection.localPort ?? options.localPort ?? 0
@@ -260,7 +253,10 @@ export class WslOrcadConnectionManager {
         throw new WslOrcadConnectionSupersededError(distro)
       }
       const pairingOffer = await resolveWslOrcadPairing(
-        launch, forward.entry.localPort, paired, this.dependencies.verifyIdentity
+        launch,
+        forward.entry.localPort,
+        paired,
+        this.dependencies.verifyIdentity
       )
       if (this.generation(key) !== generation) {
         throw new WslOrcadConnectionSupersededError(distro)
@@ -340,8 +336,4 @@ export class WslOrcadConnectionManager {
       await this.close(key)
     }
   }
-}
-
-function defaultTransport(target: WslOrcadHostTarget): OrcadHostTransport {
-  return createWslOrcadHostTransport({ target })
 }

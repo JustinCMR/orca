@@ -12,7 +12,8 @@ import { getPreferredPairingOffer } from '../../shared/runtime-environments'
 import type { WslHostServerStop, WslHostStatus } from '../../shared/wsl-host-types'
 import type { WslHostDistroCandidate } from './wsl-host-distro-list'
 import { WslHostService, type WslHostConnector } from './wsl-host-service'
-import { WslOrcadLaunchDeferredError, type WslOrcadConnection } from './wsl-orcad-connection'
+import type { WslOrcadConnection } from './wsl-orcad-connection'
+import { WslOrcadLaunchDeferredError } from './wsl-orcad-connection-errors'
 
 const KEY = Buffer.alloc(32, 3).toString('base64')
 const UBUNTU_ID = '0e3a7f2c-1b4d-4c5e-9f60-7a8b9c0d1e2f'
