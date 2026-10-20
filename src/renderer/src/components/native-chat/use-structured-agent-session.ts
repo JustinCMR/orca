@@ -12,6 +12,7 @@ import { useStructuredLegacyLaunchStop } from '@/lib/structured-agent-session-le
 import {
   useStructuredAgentSessionHostQueuesCommands,
   useStructuredAgentSessionHostEditsQueuedMessages,
+  useStructuredAgentSessionHostEditsQueuedImages,
   useStructuredAgentSessionHostQueuesMessagesState
 } from '@/runtime/structured-agent-session-host-capability'
 import { structuredAgentSessionStopControl } from './structured-agent-session-stop-control'
@@ -232,9 +233,10 @@ export function useStructuredAgentSession(args: {
     transportState.submissions
   )
   const editCapable = useStructuredAgentSessionHostEditsQueuedMessages(target)
+  const imagesCapable = useStructuredAgentSessionHostEditsQueuedImages(target)
   const editTransport = useMemo(
-    () => ({ target, sessionId, capable: editCapable, write }),
-    [editCapable, sessionId, target, write]
+    () => ({ target, sessionId, capable: editCapable, imagesCapable, write }),
+    [editCapable, imagesCapable, sessionId, target, write]
   )
   const queuedController = useStructuredAgentSessionQueuedMessages({
     // Its published list, pause and submissions; the rest is named below.
@@ -306,10 +308,7 @@ export function useStructuredAgentSession(args: {
       ...legacyLaunchStop,
       host: stopControl,
       transportState,
-      sends: {
-        sending,
-        stopSends: sends.stopSends
-      }
+      sends: { sending, stopSends: sends.stopSends }
     }),
     stopPressed: stopControl.pressed,
     queuedMessages: queuedController,

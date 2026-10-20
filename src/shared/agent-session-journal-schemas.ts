@@ -318,6 +318,7 @@ export const AgentJournalRenderItemSchema = z.object({
   recovered: z.literal(true).optional(),
   recoveredAt: z.number().optional(),
   turnScope: AgentJournalTurnScopeSchema.optional(),
+  shortened: z.literal(true).optional(),
   ...AgentJournalProducerLinkageFields
 })
 

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
 import { acquired, fakeCodex } from './codex-structured-session-adapter-fixture'
 import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
-import { queuedMessageWithEditedText } from '../../shared/queued-message-text-edit'
+import { queuedMessageWithEdit, type QueuedMessageEdit } from '../../shared/queued-message-edit'
 
 function skill(name: string, path: string, enabled = true) {
   return { name, path, description: `${name} skill`, scope: 'user', enabled }
@@ -97,15 +97,27 @@ describe('a running Codex chat lists and runs the skills Codex loaded', () => {
       skills
     }
     const { blocks: _blocks, skills: _picks, ...retainedFields } = body
-    const unchanged = queuedMessageWithEditedText(body, text)!
+    const edit = (body: AgentJournalMessageItem, input: QueuedMessageEdit) => {
+      const result = queuedMessageWithEdit(body, input)
+      assert(result.ok)
+      return result.body
+    }
+    const unchanged = edit(body, { text })
     expect(unchanged).toBe(body)
     expect(unchanged.skills).toBe(skills)
-    const deleted = queuedMessageWithEditedText(body, 'later')!
-    const retyped = queuedMessageWithEditedText(deleted, text)!
+    const deleted = edit(body, { text: 'later' })
+    const retyped = edit(deleted, { text })
     for (const [edited, expectedSkills] of [
       [unchanged, skills],
-      [queuedMessageWithEditedText(body, 'project: $review')!, []],
-      [queuedMessageWithEditedText(body, `${text} please`)!, []],
+      [edit(body, { text: 'project: $review' }), []],
+      [edit(body, { text: `${text} please` }), []],
+      [
+        edit(body, {
+          text,
+          images: [{ type: 'image-ref', path: '/work/repo/example.png', alt: 'edited' }]
+        }),
+        []
+      ],
       [retyped, []]
     ] as const) {
       expect(edited).toMatchObject(retainedFields)
