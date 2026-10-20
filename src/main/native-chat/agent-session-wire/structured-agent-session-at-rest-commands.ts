@@ -8,6 +8,9 @@ export type StructuredAgentSessionAtRestCommands = {
   dispose?(): void
   read(record: AgentSessionRecord): AgentSessionSlashCommand[] | undefined
   onChange(listener: () => void): () => void
-  /** Resolves once no scan for this record is running, or when `budgetMs` ends. */
-  settled?(record: AgentSessionRecord, budgetMs: number): Promise<void>
+  /** Captures the current answer within `budgetMs`, following ownership changes. */
+  settled?(
+    record: AgentSessionRecord,
+    budgetMs: number
+  ): Promise<AgentSessionSlashCommand[] | undefined>
 }

@@ -103,18 +103,16 @@ export class StructuredAgentSessionClientDelivery {
   /** As `readCommands`, but a scan this read starts or finds running gets a short while to land,
    *  for a client that asks once per menu and never hears a later change. */
   async readCommandsSettled(sessionId: string) {
-    const first = this.readCommands(sessionId)
     const { adapter, store } = this.deps()
+    const live = adapter.readCommands?.(sessionId)
     const record = store.getRecord(sessionId)
-    if (
-      adapter.readCommands?.(sessionId) !== undefined ||
-      !record ||
-      !adapter.atRestCommands?.settled
-    ) {
-      return first
+    if (live !== undefined || !record) {
+      return live
     }
-    await adapter.atRestCommands.settled(record, AT_REST_COMMANDS_READ_BUDGET_MS)
-    return this.readCommands(sessionId)
+    const commands = adapter.atRestCommands?.settled
+      ? await adapter.atRestCommands.settled(record, AT_REST_COMMANDS_READ_BUDGET_MS)
+      : adapter.atRestCommands?.read(record)
+    return adapter.readCommands?.(sessionId) ?? commands
   }
 
   publishStatus = (sessionId: string): void => this.statusFeed.publish(sessionId)

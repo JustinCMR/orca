@@ -1,3 +1,6 @@
+import { getAgentLabel } from '@/lib/agent-catalog'
+import { MAX_SKILL_REFS } from '../../../../shared/rpc-contract/structured-agent-session-message-params'
+import { SkillRefLimitError } from '../../../../shared/structured-agent-session-send-mutation'
 import { promptSkillRefs } from './native-chat-prompt-document'
 import { useCallback } from 'react'
 import { completeNativeChatStructuredUserAction } from './native-chat-structured-user-action'
@@ -126,7 +129,13 @@ export function useNativeChatStructuredComposerSend({
         .catch((error) => {
           const notice = nativeChatNoticeFromError(
             error,
-            agentSessionWriteNoticeText([hostCommand ? 'notDoneCommand' : 'notDoneSend'])
+            error instanceof SkillRefLimitError
+              ? translate(
+                  'components.native-chat.composer.tooManySkills',
+                  'Your message was not sent to {{agent}}. Keep at most {{limit}} selected skill files and try again.',
+                  { agent: getAgentLabel(agent), limit: MAX_SKILL_REFS }
+                )
+              : agentSessionWriteNoticeText([hostCommand ? 'notDoneCommand' : 'notDoneSend'])
           )
           structuredTransport.onError(notice.text, { errorText: notice.errorText })
         })

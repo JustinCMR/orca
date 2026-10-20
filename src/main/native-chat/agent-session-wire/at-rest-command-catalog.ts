@@ -54,11 +54,6 @@ type Entry = {
   settled: Set<() => void>
 }
 
-/** The folder a record's agent launches in: a floating chat's pin, otherwise its workspace's. */
-function pinnedFolder(record: AgentSessionRecord): string | null {
-  return agentSessionPinnedLaunchDirectory(record) ?? null
-}
-
 /**
  * The `/` surface of a chat whose agent is not running, as its source lists it on the host that
  * runs it, in the folder the chat launches in. Nothing until the first scan lands; `onChange`
@@ -92,37 +87,36 @@ export class AtRestCommandCatalog implements StructuredAgentSessionAtRestCommand
     this.listeners.clear()
   }
 
-  read = (record: AgentSessionRecord): AgentSessionSlashCommand[] | undefined => {
-    const entry = this.entry(record)
-    if (!entry) {
-      return undefined
-    }
-    const now = this.now()
-    const due =
-      entry.inFlight === 0
-        ? now - entry.scannedAt >= AT_REST_COMMANDS_TTL_MS
-        : entry.inFlight < MAX_SCANS_IN_FLIGHT && now - entry.lastStartedAt >= SCAN_OVERDUE_MS
-    if (due) {
-      this.scanInto(entry, record)
-    }
-    return entry.commands
-  }
+  read = (record: AgentSessionRecord): AgentSessionSlashCommand[] | undefined =>
+    this.readEntry(record)?.commands
 
-  /** The kept answer once no scan for this record is running, or when `budgetMs` ends. */
-  settled = (record: AgentSessionRecord, budgetMs: number): Promise<void> => {
-    const entry = this.entry(record)
-    if (!entry || entry.inFlight === 0) {
-      return Promise.resolve()
-    }
-    return new Promise((resolve) => {
-      const done = (): void => {
-        clearTimeout(timer)
-        entry.settled.delete(done)
-        resolve()
+  /** Captures the current owner's answer within one deadline, following retired owners. */
+  settled = async (record: AgentSessionRecord, budgetMs: number) => {
+    const deadline = Date.now() + budgetMs
+    for (;;) {
+      const entry = this.readEntry(record)
+      if (!entry) {
+        return undefined
       }
-      const timer = setTimeout(done, budgetMs)
-      entry.settled.add(done)
-    })
+      const remaining = deadline - Date.now()
+      if (entry.inFlight > 0 && remaining > 0) {
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            clearTimeout(timer)
+            entry.settled.delete(done)
+            resolve()
+          }
+          const timer = setTimeout(done, remaining)
+          entry.settled.add(done)
+        })
+      }
+      if (this.entries.get(entry.key) === entry) {
+        return entry.commands
+      }
+      if (this.disposed || Date.now() >= deadline) {
+        return undefined
+      }
+    }
   }
 
   onChange = (listener: () => void): (() => void) => {
@@ -132,7 +126,7 @@ export class AtRestCommandCatalog implements StructuredAgentSessionAtRestCommand
 
   // Why the pin and the account: two floating chats pinned to different folders, or one folder
   // under two accounts, list different skills.
-  private entry(record: AgentSessionRecord): Entry | undefined {
+  private readEntry(record: AgentSessionRecord): Entry | undefined {
     if (this.disposed || !this.source.accepts(record)) {
       return undefined
     }
@@ -140,7 +134,7 @@ export class AtRestCommandCatalog implements StructuredAgentSessionAtRestCommand
       record.provider,
       requireLegacyAgentSessionAccountHome(record.accountHome).path,
       record.location.workspaceId,
-      pinnedFolder(record)
+      agentSessionPinnedLaunchDirectory(record)
     ])
     let entry = this.entries.get(key)
     if (!entry) {
@@ -155,6 +149,14 @@ export class AtRestCommandCatalog implements StructuredAgentSessionAtRestCommand
         settled: new Set()
       }
       this.entries.set(key, entry)
+    }
+    const now = this.now()
+    const due =
+      entry.inFlight === 0
+        ? now - entry.scannedAt >= AT_REST_COMMANDS_TTL_MS
+        : entry.inFlight < MAX_SCANS_IN_FLIGHT && now - entry.lastStartedAt >= SCAN_OVERDUE_MS
+    if (due) {
+      this.scanInto(entry, record)
     }
     return entry
   }
@@ -176,7 +178,15 @@ export class AtRestCommandCatalog implements StructuredAgentSessionAtRestCommand
       entry.kept = scan
       return true
     }
-    void this.scan(record, isCurrent)
+    void (async () => {
+      await atRestCommandContextReady()
+      const cwd =
+        agentSessionPinnedLaunchDirectory(record) ??
+        (await this.source.resolveWorkspacePath(record.location.workspaceId))
+      return isCurrent()
+        ? this.source.scan(record, cwd, isCurrent)
+        : { commands: undefined, fromAgent: false }
+    })()
       .then(
         ({ commands, fromAgent }) => {
           if (!newest(fromAgent)) {
@@ -203,23 +213,9 @@ export class AtRestCommandCatalog implements StructuredAgentSessionAtRestCommand
       .finally(() => {
         entry.inFlight -= 1
         if (entry.inFlight === 0) {
-          for (const done of entry.settled) {
-            done()
-          }
+          entry.settled.forEach((done) => done())
         }
       })
-  }
-
-  private async scan(
-    record: AgentSessionRecord,
-    isCurrent: () => boolean
-  ): Promise<AtRestCommandScan> {
-    await atRestCommandContextReady()
-    const cwd =
-      pinnedFolder(record) ?? (await this.source.resolveWorkspacePath(record.location.workspaceId))
-    return isCurrent()
-      ? this.source.scan(record, cwd, isCurrent)
-      : { commands: undefined, fromAgent: false }
   }
 
   private now(): number {

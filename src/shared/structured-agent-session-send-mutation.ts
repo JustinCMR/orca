@@ -96,6 +96,8 @@ export type StructuredAgentSessionAttachment = {
   connectionId?: string
 }
 
+export class SkillRefLimitError extends Error {}
+
 /** The journal body for a message a person sends: its text, then its images, and the skills it
  *  picked whose `$name` the text still carries. */
 export function structuredAgentSessionSendBody(
@@ -104,6 +106,9 @@ export function structuredAgentSessionSendBody(
   skills: readonly AgentJournalSkillRef[] = []
 ): z.infer<typeof SendBody> {
   const picked = pickedSkillsInText(text, skills)
+  if (picked.length > MAX_SKILL_REFS) {
+    throw new SkillRefLimitError()
+  }
   return {
     kind: 'message',
     role: 'user',
@@ -121,15 +126,13 @@ export function pickedSkillsInText(
   skills: readonly AgentJournalSkillRef[]
 ): AgentJournalSkillRef[] {
   const seen = new Set<string>()
-  return skills
-    .filter((skill) => {
-      if (seen.has(skill.path) || !textNamesSkill(text, skill.name)) {
-        return false
-      }
-      seen.add(skill.path)
-      return true
-    })
-    .slice(0, MAX_SKILL_REFS)
+  return skills.filter((skill) => {
+    if (seen.has(skill.path) || !textNamesSkill(text, skill.name)) {
+      return false
+    }
+    seen.add(skill.path)
+    return true
+  })
 }
 
 function textNamesSkill(text: string, name: string): boolean {

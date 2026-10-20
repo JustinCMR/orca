@@ -37,16 +37,16 @@ describe('a running Codex chat lists and runs the skills Codex loaded', () => {
     expect(reported.filter((row) => row.kind === 'command').map((row) => row.name)).toEqual(
       expect.arrayContaining(['model', 'clear', 'compact', 'goal'])
     )
-    expect(reported.filter((row) => row.kind === 'skill')).toEqual([
-      { name: 'review', kind: 'skill', path: PERSONAL_REVIEW, description: 'review skill' },
-      { name: 'review', kind: 'skill', path: REPO_REVIEW, description: 'review skill' },
-      {
-        name: 'work-pets:create-pet',
-        kind: 'skill',
-        path: PET,
-        description: 'work-pets:create-pet skill'
-      }
-    ])
+    expect(reported.filter((row) => row.kind === 'skill')).toEqual(
+      listed
+        .filter(({ enabled }) => enabled)
+        .map(({ name, path, description }) => ({
+          name,
+          path,
+          description,
+          kind: 'skill'
+        }))
+    )
 
     listed = [...listed, skill('fresh', '/home/me/.agents/skills/fresh/SKILL.md')]
     codex.connections[0].handlers.onNotification?.('skills/changed', {})
@@ -74,14 +74,12 @@ describe('a running Codex chat lists and runs the skills Codex loaded', () => {
       }
     })
     expect(
-      codex.connections[0].calls.find((call) => call.method === 'turn/start')?.params?.input
+      codex.connections[0].calls.findLast((call) => call.method === 'turn/start')?.params?.input
     ).toEqual([
       { type: 'text', text: '$review this, then $gone' },
       { type: 'skill', name: 'review', path: REPO_REVIEW }
     ])
-  })
 
-  it('keeps untouched queue picks but dispatches edited and retyped mentions as plain text', async () => {
     const text = 'project: $review personal: $review'
     const skills = [
       { name: 'review', path: REPO_REVIEW },
@@ -98,6 +96,7 @@ describe('a running Codex chat lists and runs the skills Codex loaded', () => {
       from: { kind: 'agent', senders: [], orchestration: null },
       skills
     }
+    const { blocks: _blocks, skills: _picks, ...retainedFields } = body
     const unchanged = queuedMessageWithEditedText(body, text)!
     expect(unchanged).toBe(body)
     expect(unchanged.skills).toBe(skills)
@@ -109,31 +108,17 @@ describe('a running Codex chat lists and runs the skills Codex loaded', () => {
       [queuedMessageWithEditedText(body, `${text} please`)!, []],
       [retyped, []]
     ] as const) {
-      expect(edited).toMatchObject({
-        kind: body.kind,
-        role: body.role,
-        from: body.from,
-        sentAs: body.sentAs
-      })
-      const codex = fakeCodex({
-        'skills/list': () => ({
-          data: [
-            { cwd: '/work/repo', skills: skills.map((s) => skill(s.name, s.path)), errors: [] }
-          ]
-        }),
-        'turn/start': () => ({ turn: { id: 'turn-1' } })
-      })
+      expect(edited).toMatchObject(retainedFields)
       const adapter = await acquired(codex)
       await settle()
+      const connection = codex.connections.at(-1)!
       await adapter.dispatch({
         sessionId: 'session-1',
         clientMessageId: 'queued-pick',
         fence: 7,
         body: edited
       })
-      expect(
-        codex.connections[0].calls.find((call) => call.method === 'turn/start')?.params?.input
-      ).toEqual([
+      expect(connection.calls.find((call) => call.method === 'turn/start')?.params?.input).toEqual([
         ...edited.blocks.filter((block) => block.type === 'text'),
         { type: 'localImage', path: '/work/repo/example.png' },
         ...expectedSkills.map((s) => ({ type: 'skill', ...s }))

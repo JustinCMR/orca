@@ -107,12 +107,7 @@ async function probeCodexSkills(
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? sleepFor
   const spawnedAt = now()
-  let answer!: (scan: AtRestCommandScan) => void
-  let fail!: (error: unknown) => void
-  const answered = new Promise<AtRestCommandScan>((resolve, reject) => {
-    answer = resolve
-    fail = reject
-  })
+  const answer = Promise.withResolvers<AtRestCommandScan>()
   void (deps.runSession ?? runCodexAppServerSession)(
     {
       command,
@@ -126,23 +121,23 @@ async function probeCodexSkills(
     },
     async (rpc) => {
       try {
-        answer({
+        answer.resolve({
           commands: await requestCodexSkillReport(rpc, cwd, { timeoutMs: ANSWER_TIMEOUT_MS }),
           fromAgent: true
         })
       } catch (error) {
         if (!isCodexSkillsListUnsupported(error)) {
-          fail(error)
+          answer.reject(error)
           return
         }
         // An older Codex has no list to give; the client keeps its folder scan.
-        answer({ commands: undefined, fromAgent: true })
+        answer.resolve({ commands: undefined, fromAgent: true })
       } finally {
         // Settling holds a process, not an answering permit, including after a list failure.
         releaseSlot()
         await sleep(spawnedAt + CODEX_SKILLS_PROBE_SETTLE_MS - now())
       }
     }
-  ).catch(fail)
-  return answered
+  ).catch(answer.reject)
+  return answer.promise
 }

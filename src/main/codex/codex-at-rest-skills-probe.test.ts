@@ -80,14 +80,9 @@ describe('a resting Codex chat lists the skills Codex would load', () => {
   it.each(['method not found', 'temporary failure'])(
     'retains the floor after %s without holding the answer',
     async (message) => {
-      let release = () => {}
+      const floor = Promise.withResolvers<void>()
       let closed = false
-      const sleep = vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            release = resolve
-          })
-      )
+      const sleep = vi.fn(() => floor.promise)
       const catalog = createCodexAtRestSkillCatalog({
         resolveWorkspacePath: async () => '/work',
         resolveLaunchArgs: () => [],
@@ -112,7 +107,7 @@ describe('a resting Codex chat lists the skills Codex would load', () => {
       await catalog.settled(record, 1_000)
       expect(sleep).toHaveBeenCalledWith(70_000)
       expect(closed).toBe(false)
-      release()
+      floor.resolve()
       await vi.waitFor(() => expect(closed).toBe(true))
     }
   )

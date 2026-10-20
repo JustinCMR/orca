@@ -29,6 +29,7 @@ describe('durable execution-host launch settings', () => {
     const controller = new RuntimeClientSettingsController(store)
     await controller.mutateAgentLaunch({ type: 'arguments', agent: 'codex', value: '' })
     const calls: CodexAppServerInvocation[] = []
+    const obsolete = deferred<void>()
     const catalog = createCodexAtRestSkillCatalog({
       resolveWorkspacePath: async () => '/fixture/work',
       resolveCommand: () => '/fixture/codex',
@@ -37,6 +38,9 @@ describe('durable execution-host launch settings', () => {
       sleep: async () => {},
       runSession: async (invocation, body) => {
         calls.push(invocation)
+        if (calls.length === 2) {
+          await obsolete.promise
+        }
         return body({
           request: async () => ({
             data: [
@@ -63,19 +67,27 @@ describe('durable execution-host launch settings', () => {
       await catalog.settled(record, 1000)
       expect(catalog.read(record)?.some((row) => row.name === 'qa-plugin:mark')).toBe(true)
       expect(calls).toHaveLength(1)
+      catalog.retireContext()
+      const started = Date.now()
+      const bounded = catalog.settled(record, 1000)
+      await vi.waitFor(() => expect(calls).toHaveLength(2))
       await controller.mutateAgentLaunch({
         type: 'arguments',
         agent: 'codex',
         value: '--disable plugins'
       })
       expect(catalog.read(record)).toBeUndefined()
-      await catalog.settled(record, 1000)
+      expect((await bounded)?.some((row) => row.name === 'qa-plugin:mark')).toBe(false)
+      expect(Date.now() - started).toBeLessThan(1000)
+      obsolete.resolve()
       expect(catalog.read(record)?.some((row) => row.name === 'qa-plugin:mark')).toBe(false)
       expect(calls.map(({ args }) => args)).toEqual([
+        ['app-server'],
         ['app-server'],
         ['--disable', 'plugins', 'app-server']
       ])
     } finally {
+      obsolete.resolve()
       release()
     }
   })
