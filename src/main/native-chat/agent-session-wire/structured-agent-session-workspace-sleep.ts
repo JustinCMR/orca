@@ -48,14 +48,25 @@ export async function sleepStructuredAgentSessionWorkspace(
   const sessionIds = [...candidates]
   // Admits every close synchronously; `async` turns a synchronous throw into a rejection.
   const stops = await Promise.allSettled(
-    sessionIds.map(async (sessionId) =>
-      host.lifetime.closeForWorkspaceSleep(
+    sessionIds.map(async (sessionId) => {
+      const stop = await host.lifetime.closeForWorkspaceSleep(
         sessionId,
         workspaceId,
-        LOCAL_EXECUTION_HOST_ID,
-        (stopped) => settleWorkspaceSleepChat(host, sessionId, stopped, markAsleep)
+        LOCAL_EXECUTION_HOST_ID
       )
-    )
+      return host.tasks.serialize(sessionId, async () => {
+        const record = host.deps.store.getRecord(sessionId)
+        if (
+          !stop ||
+          !record ||
+          !belongs(record.location) ||
+          record.lease.runtimeFence !== stop.fence
+        ) {
+          return null
+        }
+        return settleWorkspaceSleepChat(host, sessionId, stop.stopped, markAsleep)
+      })
+    })
   )
   const stoppedSessionIds: string[] = []
   const failures: NonNullable<AgentSessionWorkspaceSleepResult['failures']> = []
@@ -81,7 +92,7 @@ export async function sleepStructuredAgentSessionWorkspace(
   return failures.length > 0 ? { stoppedSessionIds, failures } : { stoppedSessionIds }
 }
 
-/** Decides one chat's receipt, and writes its mark, in the step that stopped it. */
+/** After aborted starts settle, one ordered step decides the receipt and writes its mark. */
 async function settleWorkspaceSleepChat(
   host: WorkspaceSleepHost,
   sessionId: string,

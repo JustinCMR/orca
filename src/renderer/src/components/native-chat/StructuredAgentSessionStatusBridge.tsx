@@ -332,10 +332,14 @@ function StructuredAgentSessionOwnedStatusProjection({
   // A chat its host runs again is awake whatever its mark says.
   const sleptAt = summary?.hostExecutionOwned ? undefined : summary?.sleptAt
   useEffect(() => {
-    const { setStructuredChatSleptAt } = useAppStore.getState()
-    setStructuredChatSleptAt(paneKey, sleptAt)
-    return () => setStructuredChatSleptAt(paneKey, undefined)
-  }, [paneKey, sleptAt])
+    if (observation === 'live') {
+      useAppStore.getState().setStructuredChatSleptAt(paneKey, sleptAt)
+    }
+  }, [paneKey, sleptAt, observation])
+  useEffect(
+    () => () => useAppStore.getState().setStructuredChatSleptAt(paneKey, undefined),
+    [paneKey]
+  )
   const launchFailed =
     useStructuredAgentSessionLaunchLifecycle(tab.worktreeId, tab.entityId) === 'failed'
   const failedAt = useStructuredAgentSessionLaunchFailedAt(tab.entityId)
