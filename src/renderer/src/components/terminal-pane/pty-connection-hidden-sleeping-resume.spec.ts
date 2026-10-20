@@ -218,7 +218,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
             trigger: 'automatic'
           })
         )
-        expect(mockStoreState.terminalLayoutsByTabId?.['tab-1']?.ptyIdsByLeafId[LEAF_2]).toBe(
+        expect(mockStoreState.terminalLayoutsByTabId?.['tab-1']?.ptyIdsByLeafId?.[LEAF_2]).toBe(
           DEAD_SESSION_ID
         )
         first.binding.dispose()
@@ -231,7 +231,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
             attachOnly: true
           })
         )
-        expect(recovered.transport.getPtyId()).toBe(DEAD_SESSION_ID)
+        expect(recovered.transport.getPtyId).toHaveLastReturnedWith(DEAD_SESSION_ID)
         expect(mockStoreState.clearSleepingAgentSession).not.toHaveBeenCalled()
         recovered.isVisibleRef.current = true
         recovered.binding.noteVisibilityResume()
@@ -297,7 +297,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
         attachOnly: true
       })
       expect(held.transport.connect.mock.calls[1]?.[0]).not.toHaveProperty('attachOnly')
-      expect(held.transport.getPtyId()).toBe(DEAD_SESSION_ID)
+      expect(held.transport.getPtyId).toHaveLastReturnedWith(DEAD_SESSION_ID)
     })
 
     it('resumes a hidden pane at mount when a background mount asked for its tab', async () => {

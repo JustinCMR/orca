@@ -152,5 +152,6 @@ export function startDeferredSessionReattachUnlessHiddenAgentResume(
     if (unverifiable) {
       settleSpawnThatLeftPaneUnbound(session, 'reattach-unverifiable')
     }
+    return { reopened: false, agentResumed: false }
   })
 }
