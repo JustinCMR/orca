@@ -118,7 +118,7 @@ async function commitReservedPtyIpcSpawn(ctx: PtyIpcSpawnState): Promise<PtySpaw
   // seed but the list/read records still live main-side.
   seedTerminalRestoreRecordsFromSpawnResult(ctx.deps.runtime, ctx.result)
   // Why: arm main's per-PTY Command Code output detector from the launch command (startupCommand parity); banner detection covers PTYs without one.
-  if (!ctx.stablePaneOwner) {
+  if (!ctx.stablePaneOwner && args.attachOnly !== true) {
     ctx.deps.runtime?.noteTerminalSpawnCommand?.(
       ctx.result.id,
       typeof ctx.launchCommand === 'string' ? ctx.launchCommand : null
@@ -187,7 +187,7 @@ async function commitReservedPtyIpcSpawn(ctx: PtyIpcSpawnState): Promise<PtySpaw
         : null
   })
   // Why: telemetry-plan.md§Agent launch semantics — fire agent_started only after spawn resolved; safeParse each field so a spoofed IPC payload can't poison the event (missing required field skips it).
-  if (args.telemetry && !ctx.stablePaneOwner) {
+  if (args.telemetry && !ctx.stablePaneOwner && args.attachOnly !== true) {
     recordPtySpawnTelemetry(args.telemetry)
   }
   const response = {

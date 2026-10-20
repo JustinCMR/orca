@@ -10,6 +10,8 @@ import {
 import {
   assemblePtySpawnEnvDeletions,
   assemblePtySpawnLaunchOptions,
+  assemblePtySessionOptions,
+  type PtySpawnLaunchOptionsInput,
   restoreProvisionalPtySize,
   seedPtySpawnSize
 } from '../spawn-options-assembly'
@@ -35,7 +37,7 @@ export async function buildPtyIpcSpawnOptions(
     settings
   })
   ctx.combinedEnvToDelete = deletions.envToDelete
-  const launch = await assemblePtySpawnLaunchOptions({
+  const input: PtySpawnLaunchOptionsInput = {
     args,
     env: deletions.env,
     envToDelete: ctx.combinedEnvToDelete,
@@ -57,10 +59,15 @@ export async function buildPtyIpcSpawnOptions(
     getSettings: ctx.deps.getSettings,
     store: ctx.deps.store,
     claudeAuth: ctx.claudeAuth
-  })
-  ctx.spawnOptions = launch.spawnOptions
-  ctx.spawnEnv = launch.env
-  ctx.launchCommand = launch.launchCommand
+  }
+  if (args.attachOnly === true) {
+    ctx.spawnOptions = assemblePtySessionOptions(input)
+  } else {
+    const launch = await assemblePtySpawnLaunchOptions(input)
+    ctx.spawnOptions = launch.spawnOptions
+    ctx.spawnEnv = launch.env
+    ctx.launchCommand = launch.launchCommand
+  }
   const seeded = seedPtySpawnSize({
     sessionId: ctx.effectiveSessionId,
     sessionAppId: ctx.effectiveSessionAppId,

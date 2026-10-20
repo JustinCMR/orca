@@ -62,6 +62,10 @@ process.stdin.on('data', (chunk) => {
     process.stdout.write('\\x1b[?25h')
   }
   append({ event: 'input', input })
+  if (input.includes('ORCA_E2E_HIDDEN_OUTPUT')) {
+    process.stdout.write('\\u001b]0;Hidden delivery verified\\u0007HIDDEN_OUTPUT_DELIVERED\\r\\n\\u0007')
+    return
+  }
   if (input.includes('ORCA_E2E_PUBLISH_DONE')) {
     void publishRecovery().catch((error) => process.stderr.write(String(error)))
     return

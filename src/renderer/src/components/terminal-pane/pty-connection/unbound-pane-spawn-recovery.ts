@@ -16,7 +16,10 @@ import type { ConnectPanePtySession } from './connect-pane-pty-session'
  *
  *  A transport that armed or parked its own retry owns the pane, so a second
  *  remount never races it. */
-export function settleSpawnThatLeftPaneUnbound(session: ConnectPanePtySession): void {
+export function settleSpawnThatLeftPaneUnbound(
+  session: ConnectPanePtySession,
+  reason: 'spawn-left-pane-unbound' | 'reattach-unverifiable' = 'spawn-left-pane-unbound'
+): void {
   session.settlePaneAttachAttempt('failed')
   if (session.transport.ownsRecovery?.() === true) {
     return
@@ -31,7 +34,7 @@ export function settleSpawnThatLeftPaneUnbound(session: ConnectPanePtySession): 
   void requestTerminalPaneRecovery({
     tabId: session.deps.tabId,
     ptyId: null,
-    reason: 'spawn-left-pane-unbound',
+    reason,
     terminalRecoveryGeneration: session.terminalRecoveryGeneration,
     terminalRecoveryInstanceId: session.terminalRecoveryInstance.id
   })

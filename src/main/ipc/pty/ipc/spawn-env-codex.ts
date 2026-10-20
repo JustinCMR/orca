@@ -1,15 +1,9 @@
-import { isNativeWindowsLocalPtySpawn } from '../../../runtime/terminal-model-query-authority'
 import { resolvePtySpawnHostEnv } from '../spawn-host-env'
 import type { PtyIpcSpawnState } from './spawn-state'
 
 export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promise<void> {
   const args = ctx.args
   ctx.effectiveShellOverride = ctx.terminalRuntimeOptions.shellOverride
-  ctx.nativeWindowsConptySpawn = isNativeWindowsLocalPtySpawn({
-    connectionId: args.connectionId,
-    cwd: args.cwd,
-    shellOverride: ctx.effectiveShellOverride
-  })
   const hostEnv = await resolvePtySpawnHostEnv({
     launchAgent: args.launchAgent,
     command: args.command,

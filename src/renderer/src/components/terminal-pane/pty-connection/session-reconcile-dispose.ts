@@ -124,6 +124,13 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       }
       return null
     },
+    retryHeldAgentWake() {
+      if (!session.hiddenAgentResumeHeldTarget) {
+        return null
+      }
+      session.consumeHibernatedAgentWake()
+      return session.hibernatedWakeCompletion ?? null
+    },
     sampleForegroundAgentOnFocus() {
       session.requestKnownWindowsShiftEnterReconfirmation()
       session.sampleVisiblePaneForegroundAgent()

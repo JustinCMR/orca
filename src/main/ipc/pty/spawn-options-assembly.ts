@@ -133,21 +133,7 @@ export async function assemblePtySpawnLaunchOptions(input: PtySpawnLaunchOptions
   const env = openCodeLaunch.env
   const launchCommand = openCodeLaunch.command
   promoteAgentTeamsShimPath(env, input.requestedAgentTeamsPath)
-  const spawnOptions: PtySpawnOptions = {
-    cols: args.cols,
-    rows: args.rows,
-    cwd: input.cwd,
-    ...(input.prevalidatedCwd && !input.isDaemonHostSpawn
-      ? { prevalidatedCwd: input.prevalidatedCwd }
-      : {}),
-    env,
-    historyIsolationEnabled:
-      input.historyIsolationEnabled ??
-      input.getSettings?.()?.terminalScopeHistoryByWorktree ??
-      true,
-    ...(input.isNewSession ? { isNewSession: true } : {}),
-    envToDelete: input.envToDelete
-  }
+  const spawnOptions = assemblePtySessionOptions({ ...input, env, launchCommand })
   if (!connectionId && !input.isDaemonHostSpawn) {
     spawnOptions.codexHomePathOverride = { value: input.selectedCodexHomePath }
   }
@@ -198,6 +184,29 @@ export async function assemblePtySpawnLaunchOptions(input: PtySpawnLaunchOptions
   if (trustWrite) {
     await trustWrite
   }
+  return { spawnOptions, env, launchCommand }
+}
+
+/** Identity and routing are needed by attachment without preparing a launch. */
+export function assemblePtySessionOptions(input: PtySpawnLaunchOptionsInput): PtySpawnOptions {
+  const { args, env, launchCommand } = input
+  const connectionId = args.connectionId ?? undefined
+  const spawnOptions: PtySpawnOptions = {
+    cols: args.cols,
+    rows: args.rows,
+    cwd: input.cwd,
+    ...(args.worktreeId !== undefined ? { worktreeId: args.worktreeId } : {}),
+    ...(input.prevalidatedCwd && !input.isDaemonHostSpawn
+      ? { prevalidatedCwd: input.prevalidatedCwd }
+      : {}),
+    env,
+    historyIsolationEnabled:
+      input.historyIsolationEnabled ??
+      input.getSettings?.()?.terminalScopeHistoryByWorktree ??
+      true,
+    ...(input.isNewSession ? { isNewSession: true } : {}),
+    envToDelete: input.envToDelete
+  }
   if (input.paneKey) {
     spawnOptions.paneKey = input.paneKey
   }
@@ -226,7 +235,7 @@ export async function assemblePtySpawnLaunchOptions(input: PtySpawnLaunchOptions
         : undefined
     }
   }
-  return { spawnOptions, env, launchCommand }
+  return spawnOptions
 }
 
 /**

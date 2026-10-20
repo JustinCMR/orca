@@ -23,6 +23,9 @@ export async function spawnIpcPty(
   connectOptions: PtyConnectOptions,
   admittedSessionId?: string
 ): Promise<IpcPtySpawnResponse> {
+  if (connectOptions.attachOnly && !admittedSessionId?.trim()) {
+    throw new Error('terminal_attach_requires_existing_session')
+  }
   if (
     !admittedSessionId &&
     transportOptions.launchAgent === 'opencode' &&

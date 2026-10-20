@@ -8,7 +8,7 @@ import { WORKSPACE_FILE_PATH_MIME, WORKSPACE_FILE_PATHS_MIME } from '@/lib/works
 import CloseTerminalDialog from './CloseTerminalDialog'
 import TerminalContextMenu from './TerminalContextMenu'
 import TerminalPaneHeaderOverlay from './TerminalPaneHeaderOverlay'
-import { isPaneOwnerUnverifiedError, TerminalErrorToast } from './TerminalErrorToast'
+import { isRetryableReattachError, TerminalErrorToast } from './TerminalErrorToast'
 import { openTerminalBesideTab } from './open-terminal-beside-tab'
 import { AgentLaunchPaneNoticePortal } from './AgentLaunchPaneNotice'
 import { requestTerminalPaneRecovery } from './terminal-pane-recovery'
@@ -203,8 +203,18 @@ export function TerminalPaneSurface({
               onDismiss={dismissTerminalError}
               onRestartDaemon={() => daemonActions.setPending('restart')}
               onRetry={
-                isPaneOwnerUnverifiedError(visibleTerminalError)
+                isRetryableReattachError(visibleTerminalError)
                   ? () => {
+                      const binding = controller.panePtyBindingsRef.current.get(activePane.id)
+                      const wake =
+                        binding &&
+                        'retryHeldAgentWake' in binding &&
+                        typeof binding.retryHeldAgentWake === 'function'
+                          ? binding.retryHeldAgentWake()
+                          : null
+                      if (wake) {
+                        return wake
+                      }
                       const ptyId = activePane
                         ? (paneTransportsRef.current.get(activePane.id)?.getPtyId() ?? null)
                         : null

@@ -1,3 +1,4 @@
+import { isNativeWindowsLocalPtySpawn } from '../../../runtime/terminal-model-query-authority'
 import {
   isTerminalLeafId,
   makePaneKey,
@@ -15,7 +16,7 @@ import type { PtyIpcSpawnState } from './spawn-state'
 import { assemblePtyIpcSpawnCodexEnv } from './spawn-env-codex'
 import { prepareAntigravityAccountForLaunch } from '../../../antigravity/native-account-launch'
 
-export async function assemblePtyIpcSpawnEnv(ctx: PtyIpcSpawnState): Promise<void> {
+export function preparePtyIpcPaneIdentity(ctx: PtyIpcSpawnState): boolean {
   const args = ctx.args
   // Why: the daemon-backed provider skips LocalPtyProvider's buildSpawnEnv, so assemble the same host-local env here for parity.
   const baseEnvWithAuth = ctx.claudeAuth ? { ...args.env, ...ctx.claudeAuth.envPatch } : args.env
@@ -55,6 +56,7 @@ export async function assemblePtyIpcSpawnEnv(ctx: PtyIpcSpawnState): Promise<voi
   ctx.stablePaneKey = verifiedPaneKey ?? ctx.migrationUnsupportedPaneKey ?? ctx.metadataPaneKey
   ctx.baseEnv = baseEnvWithAuth ? { ...baseEnvWithAuth } : undefined
   const shouldRefreshAgentTeamsEnv =
+    args.attachOnly !== true &&
     !ctx.preAdoptedStablePane &&
     ctx.deps.runtime !== undefined &&
     ctx.stablePaneKey !== null &&
@@ -62,7 +64,6 @@ export async function assemblePtyIpcSpawnEnv(ctx: PtyIpcSpawnState): Promise<voi
       command: args.command,
       launchConfig: args.launchConfig
     })
-  ctx.effectiveLaunchConfig = args.launchConfig
   const shouldPreAllocateTerminalHandle =
     ctx.deps.runtime !== undefined &&
     ((!(ctx.provider instanceof LocalPtyProvider) &&
@@ -74,6 +75,25 @@ export async function assemblePtyIpcSpawnEnv(ctx: PtyIpcSpawnState): Promise<voi
       runtime?.createPreAllocatedTerminalHandle() ??
       null)
     : null
+  ctx.validatedPaneKey = ctx.stablePaneKey
+  ctx.reservationPaneKey = ctx.metadataPaneKey ?? ctx.validatedPaneKey
+  ctx.validatedLeafId = ctx.verifiedLeafId ?? ctx.metadataLeafId
+  ctx.effectiveShellOverride = ctx.terminalRuntimeOptions.shellOverride
+  ctx.nativeWindowsConptySpawn = isNativeWindowsLocalPtySpawn({
+    connectionId: args.connectionId,
+    cwd: args.cwd,
+    shellOverride: ctx.effectiveShellOverride
+  })
+  return shouldRefreshAgentTeamsEnv
+}
+
+export async function assemblePtyIpcSpawnEnv(
+  ctx: PtyIpcSpawnState,
+  shouldRefreshAgentTeamsEnv: boolean
+): Promise<void> {
+  const args = ctx.args
+  const runtime = ctx.deps.runtime
+  ctx.effectiveLaunchConfig = args.launchConfig
   if (shouldRefreshAgentTeamsEnv && ctx.preAllocatedHandle && runtime) {
     // Why: Agent Teams ids/tokens are process-local, so the team env must be regenerated for the new leader PTY.
     const prepared = await runtime.prepareClaudeAgentTeamsLeaderForHandle({
@@ -113,10 +133,6 @@ export async function assemblePtyIpcSpawnEnv(ctx: PtyIpcSpawnState): Promise<voi
         ? selectWindowJcodeRuntimeDir(ctx.stablePaneKey, ctx.isDaemonHostSpawn)
         : undefined
   })
-  ctx.validatedPaneKey = ctx.stablePaneKey
-  // Why: IPC tab/leaf metadata names the pane even when ORCA_PANE_KEY was not proven.
-  ctx.reservationPaneKey = ctx.metadataPaneKey ?? ctx.validatedPaneKey
-  ctx.validatedLeafId = ctx.verifiedLeafId ?? ctx.metadataLeafId
   ctx.spawnTiming.mark('pane_env')
   await assemblePtyIpcSpawnCodexEnv(ctx)
   await prepareAntigravityAccountForLaunch({

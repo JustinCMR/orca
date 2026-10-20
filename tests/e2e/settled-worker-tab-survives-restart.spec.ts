@@ -353,7 +353,50 @@ for (const daemonSessionGone of [false, true]) {
             { timeout: 20_000, message: 'liveness before reveal' }
           )
           .toBe(workerPtyId)
+        await second.page.evaluate(
+          async ({ ptyId, worktreeId }) => {
+            window.__store?.getState().setWorkspaceUnreadByUser(worktreeId, false, 'local')
+            await window.api.pty.writeAccepted(ptyId, 'ORCA_E2E_HIDDEN_OUTPUT\n', 'driving')
+          },
+          { ptyId: workerPtyId, worktreeId: targetWorktreeId }
+        )
+        await expect
+          .poll(
+            () =>
+              second.page.evaluate(
+                async ({ tabId, ptyId }) => {
+                  const state = window.__store?.getState()
+                  const snapshot = await window.api.pty.getMainBufferSnapshot(ptyId)
+                  return {
+                    output: snapshot?.data.includes('HIDDEN_OUTPUT_DELIVERED') ?? false,
+                    title: Object.values(state?.runtimePaneTitlesByTabId[tabId] ?? {}).includes(
+                      'Hidden delivery verified'
+                    ),
+                    bell: state?.unreadTerminalTabs[tabId]
+                  }
+                },
+                { tabId: workerTabId, ptyId: workerPtyId }
+              ),
+            { timeout: 20_000 }
+          )
+          .toEqual({
+            output: true,
+            title: true,
+            bell: 'terminal-bell'
+          })
+      } else {
+        await second.page.waitForTimeout(1_000)
+        expect(
+          await second.page.evaluate(
+            (tabId) =>
+              window.__paneManagers?.get(tabId)?.getPanes?.()[0]?.container?.dataset?.ptyId ?? null,
+            workerTabId
+          )
+        ).toBeNull()
       }
+      expect(readCompletedWorkerLedger().filter((event) => event.event === 'spawn')).toHaveLength(
+        launchesBeforeRestart.length
+      )
       await second.page.evaluate(
         ({ tabId, worktreeId }) => {
           const store = window.__store
@@ -431,11 +474,19 @@ for (const daemonSessionGone of [false, true]) {
           readCompletedWorkerLedger().filter((event) => event.event === 'normal-exit')
         ).toEqual([])
       }
+      if (daemonSessionGone) {
+        await expect
+          .poll(
+            () => readCompletedWorkerLedger().filter((event) => event.event === 'spawn').length,
+            { timeout: 20_000 }
+          )
+          .toBe(launchesBeforeRestart.length + 1)
+      }
       const newLaunches = readCompletedWorkerLedger()
         .filter((event) => event.event === 'spawn')
         .slice(launchesBeforeRestart.length)
       if (daemonSessionGone) {
-        expect(newLaunches.length).toBeLessThanOrEqual(1)
+        expect(newLaunches).toHaveLength(1)
         for (const launch of newLaunches) {
           // Codex's --resume equivalent is the `resume <session-id>` subcommand.
           expect(launch.args).toContain('resume')

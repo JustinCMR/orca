@@ -15,19 +15,20 @@ import {
 } from '@/hooks/ipc-events/agent-status-startup-snapshot'
 
 const PANE_OWNER_UNVERIFIED_ERROR = 'terminal_pane_owner_unverified'
-const SESSION_NOT_FOUND_ERROR = 'Session not found: '
+type ReattachOutcome = HeldPaneReopenOutcome & { generation?: number }
 
 /** With `onNotAttached`, the reattach may only adopt a live session; any other outcome calls it instead. */
 export function startDeferredSessionReattach(
   session: ConnectPanePtySession,
   deferredReattachSessionId: string,
-  onNotAttached?: () => void
-): void {
-  void prepareDeferredSessionReattach(session, deferredReattachSessionId, onNotAttached).catch(
+  onNotAttached?: (unverifiable: boolean) => Promise<ReattachOutcome> | void
+): Promise<ReattachOutcome> {
+  return prepareDeferredSessionReattach(session, deferredReattachSessionId, onNotAttached).catch(
     (error: unknown) => {
       if (!session.disposed) {
         session.reportError(error instanceof Error ? error.message : String(error))
       }
+      return NOT_REOPENED
     }
   )
 }
@@ -35,8 +36,8 @@ export function startDeferredSessionReattach(
 async function prepareDeferredSessionReattach(
   session: ConnectPanePtySession,
   deferredReattachSessionId: string,
-  onNotAttached?: () => void
-): Promise<void> {
+  onNotAttached?: (unverifiable: boolean) => Promise<ReattachOutcome> | void
+): Promise<ReattachOutcome> {
   const generation = session.transportStreamGeneration
   let waitedForSnapshot = false
   if (
@@ -53,9 +54,9 @@ async function prepareDeferredSessionReattach(
     (waitedForSnapshot &&
       session.deps.paneTransportsRef.current.get(session.pane.id) !== session.transport)
   ) {
-    return
+    return NOT_REOPENED
   }
-  void connectDeferredSessionReattach(session, deferredReattachSessionId, onNotAttached)
+  return connectDeferredSessionReattach(session, deferredReattachSessionId, onNotAttached)
 }
 
 const NOT_REOPENED: HeldPaneReopenOutcome = { reopened: false, agentResumed: false }
@@ -64,8 +65,8 @@ const NOT_REOPENED: HeldPaneReopenOutcome = { reopened: false, agentResumed: fal
 function connectDeferredSessionReattach(
   session: ConnectPanePtySession,
   deferredReattachSessionId: string,
-  onNotAttached?: () => void
-): Promise<HeldPaneReopenOutcome> {
+  onNotAttached?: (unverifiable: boolean) => Promise<ReattachOutcome> | void
+): Promise<ReattachOutcome> {
   session.allowInitialIdleCacheSeed = true
   recordPtyConnectDiagnostic(`pane=${session.pane.id} -> REATTACH ${deferredReattachSessionId}`)
 
@@ -79,6 +80,10 @@ function connectDeferredSessionReattach(
   let expiredReattachError = false
   let paneOwnerUnverified = false
   let heldByNewerDaemon = false
+  let sessionNotFound = false
+  const isHeldWake = Boolean(
+    session.hiddenAgentResumeHeldTarget && session.hiddenAgentResumeReleased
+  )
   const coldRestoreStartup = session.buildColdRestoreAgentResumeStartup()
   const outputCallbacks = session.captureTransportOutputCallbacks(
     (message) => {
@@ -94,8 +99,8 @@ function connectDeferredSessionReattach(
       if (message.includes(PANE_OWNER_UNVERIFIED_ERROR)) {
         paneOwnerUnverified = true
       }
-      // Why silent: a sleeping agent's gone session is expected; its resume waits for reveal.
-      if (onNotAttached && message.includes(SESSION_NOT_FOUND_ERROR)) {
+      sessionNotFound = message.endsWith(`Session not found: ${deferredReattachSessionId}`)
+      if (onNotAttached || isHeldWake) {
         return
       }
       session.reportError(message)
@@ -127,75 +132,70 @@ function connectDeferredSessionReattach(
     !session.disposed &&
     session.deps.paneTransportsRef.current.get(session.pane.id) === session.transport &&
     outputCallbacks.generation === session.transportStreamGeneration
-  const startFreshInstead = (): Promise<HeldPaneReopenOutcome> =>
-    session
-      .startFreshColdRestoreAgentResume(coldRestoreStartup, { forceBlankRestoredViewport: true })
-      .then(
-        (ptyId: string | null) => ({
-          reopened: ptyId !== null,
-          agentResumed: ptyId !== null && Boolean(coldRestoreStartup)
-        }),
-        () => NOT_REOPENED
-      )
+  const startFreshInstead = (): Promise<ReattachOutcome> => {
+    const started = session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
+      forceBlankRestoredViewport: true
+    })
+    const generation = session.transportStreamGeneration
+    return started.then(
+      (ptyId: string | null) => ({
+        reopened: ptyId !== null,
+        agentResumed: ptyId !== null && Boolean(coldRestoreStartup),
+        generation
+      }),
+      () => ({ ...NOT_REOPENED, generation })
+    )
+  }
 
   void Promise.resolve(reattachPromise)
     .catch(() => null)
     .finally(() => {
       session.transportConnectInFlightSince = null
     })
+  const finishFailedReattach = async (): Promise<boolean> => {
+    session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
+    const gen = await preSignalPromise
+    if (typeof gen === 'number') {
+      await window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
+    }
+    return isCurrentReattach()
+  }
+  const failUnverifiable = (): ReattachOutcome => {
+    session.settlePaneAttachAttempt('failed')
+    if (session.deps.isVisibleRef.current || isHeldWake) {
+      session.reportError(
+        paneOwnerUnverified ? PANE_OWNER_UNVERIFIED_ERROR : 'terminal_reattach_unverifiable'
+      )
+    }
+    return { ...NOT_REOPENED, generation: outputCallbacks.generation }
+  }
   const outcome = Promise.resolve(reattachPromise)
-    .then(async (result): Promise<HeldPaneReopenOutcome> => {
+    .then(async (result): Promise<ReattachOutcome> => {
       if (!isCurrentReattach()) {
-        session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
-        const gen = await preSignalPromise
-        if (typeof gen === 'number') {
-          void window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
-        }
+        await finishFailedReattach()
         return NOT_REOPENED
       }
-      if (!result && heldByNewerDaemon) {
-        session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
-        const gen = await preSignalPromise
-        if (typeof gen === 'number') {
-          void window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
+      if (!result) {
+        if (!(await finishFailedReattach())) {
+          return NOT_REOPENED
         }
-        if (isCurrentReattach()) {
+        if (heldByNewerDaemon) {
           holdForNewerDaemon(session, deferredReattachSessionId, () =>
             connectDeferredSessionReattach(session, deferredReattachSessionId)
           )
-        }
-        return NOT_REOPENED
-      }
-      if (!result && paneOwnerUnverified) {
-        session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
-        const gen = await preSignalPromise
-        if (typeof gen === 'number') {
-          void window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
-        }
-        session.settlePaneAttachAttempt('failed')
-        return NOT_REOPENED
-      }
-      // Why before the fallbacks below: they start a fresh agent and drop the saved binding.
-      if (!result && onNotAttached) {
-        session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
-        const gen = await preSignalPromise
-        if (typeof gen === 'number') {
-          void window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
-        }
-        if (isCurrentReattach()) {
-          onNotAttached()
-        }
-        return NOT_REOPENED
-      }
-      if (!result && expiredReattachError) {
-        session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
-        const gen = await preSignalPromise
-        if (typeof gen === 'number') {
-          void window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
-        }
-        if (!isCurrentReattach()) {
           return NOT_REOPENED
         }
+        if (onNotAttached) {
+          return (await onNotAttached(!sessionNotFound)) ?? NOT_REOPENED
+        }
+        if (paneOwnerUnverified || (isHeldWake && !sessionNotFound)) {
+          return failUnverifiable()
+        }
+        if (isHeldWake) {
+          return startFreshInstead()
+        }
+      }
+      if (!result && expiredReattachError) {
         session.clearExitedPanePtyLayoutBinding(deferredReattachSessionId)
         session.deps.clearTabPtyId(session.deps.tabId, deferredReattachSessionId)
         return startFreshInstead()
@@ -227,31 +227,25 @@ function connectDeferredSessionReattach(
       }
       return {
         reopened: accepted,
+        generation: outputCallbacks.generation,
         agentResumed:
           accepted &&
           Boolean(coldRestoreStartup) &&
           !(result && typeof result === 'object' && result.agentResumeUnavailable)
       }
     })
-    .catch(async (err): Promise<HeldPaneReopenOutcome> => {
-      session.finishReattachLiveDataDeferral(false, outputCallbacks.generation)
-      const gen = await preSignalPromise
-      if (typeof gen === 'number') {
-        void window.api.pty.clearPendingPaneSerializer(session.cacheKey, gen).catch(() => {})
+    .catch(async (err): Promise<ReattachOutcome> => {
+      if (!(await finishFailedReattach())) {
+        return NOT_REOPENED
       }
       const message = err instanceof Error ? err.message : String(err)
-      if (!isCurrentReattach()) {
-        return NOT_REOPENED
-      }
-      if (message.includes(PANE_OWNER_UNVERIFIED_ERROR)) {
-        session.reportError(message)
-        session.settlePaneAttachAttempt('failed')
-        return NOT_REOPENED
-      }
+      sessionNotFound = message.endsWith(`Session not found: ${deferredReattachSessionId}`)
+      paneOwnerUnverified = message.includes(PANE_OWNER_UNVERIFIED_ERROR)
       if (onNotAttached) {
-        session.reportError(message)
-        onNotAttached()
-        return NOT_REOPENED
+        return (await onNotAttached(!sessionNotFound)) ?? NOT_REOPENED
+      }
+      if (paneOwnerUnverified || isHeldWake) {
+        return failUnverifiable()
       }
       warnTerminalLifecycleAnomaly('restored PTY reattach threw', {
         tabId: session.deps.tabId,

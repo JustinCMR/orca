@@ -1,3 +1,4 @@
+import { completeHibernatedAgentWake } from './hibernated-agent-wake-completion'
 import { resolveLiveAgentStatusConnectionRouting } from '@/lib/agent-status-connection-ownership'
 import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { useAppStore } from '@/store'
@@ -167,22 +168,7 @@ export function installPtyExitHibernate(session: ConnectPanePtySession): void {
     // Why: reveal is the wake signal for a hibernated pane. Resume the recorded
     // agent session (or fall back to a fresh shell) instead of leaving the
     // frozen frame with no PTY behind it.
-    const wake: () => Promise<string | null> = target.wake ?? session.wakeHibernatedAgentPane
-    void wake()
-      .then((spawnedPtyId) => {
-        if (!spawnedPtyId) {
-          // Why: a transient replacement-spawn failure leaves the passive
-          // record owned by this pane. Re-arm the exact target so a later
-          // mobile open can retry instead of stranding the frozen session;
-          // consume revalidates disposal, binding, PTY, and record identity.
-          session.hibernatedWakeTarget = target
-        }
-      })
-      .finally(() => {
-        if (session.hibernatedWakeInFlightClaimKey === claimKey) {
-          session.hibernatedWakeInFlightClaimKey = null
-        }
-      })
+    completeHibernatedAgentWake(session, target, claimKey)
     return claimKey
   }
   session.onExit = (

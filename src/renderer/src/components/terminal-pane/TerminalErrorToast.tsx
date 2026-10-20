@@ -108,6 +108,18 @@ export function isPaneOwnerUnverifiedError(error: string): boolean {
   return lines.length > 0 && lines.every((line) => line.includes(PANE_OWNER_UNVERIFIED_MARKER))
 }
 
+export function isRetryableReattachError(error: string): boolean {
+  const lines = error.split('\n').filter(Boolean)
+  return (
+    lines.length > 0 &&
+    lines.every(
+      (line) =>
+        line.includes(PANE_OWNER_UNVERIFIED_MARKER) ||
+        line.includes('terminal_reattach_unverifiable')
+    )
+  )
+}
+
 function humanizeUnreattachableSession(error: string): string {
   const explanation = translate(
     'auto.components.terminal.pane.TerminalErrorToast.sessionUnavailable',
@@ -144,6 +156,12 @@ export function humanizeTerminalError(error: string): string {
     return describeSshSignInRequiredTerminalError(error)
   }
   let humanized = humanizeFolderWorkspacePathErrors(localizeTerminalSpawnHints(error))
+  humanized = humanized.replaceAll('terminal_reattach_unverifiable', () =>
+    translate(
+      'auto.components.terminal.pane.TerminalErrorToast.reattachUnavailable',
+      "Orca couldn't reconnect this terminal. Your saved session is unchanged. Click Retry to try again."
+    )
+  )
   if (humanized.includes(PANE_OWNER_UNVERIFIED_MARKER)) {
     const explanation = isPaneOwnerUnverifiedError(humanized)
       ? translate(
@@ -334,7 +352,7 @@ export function TerminalErrorToast({
             </>
           ) : null}
           {showClientEnvironment && footer ? `\n\n${footer}` : null}
-          {paneOwnerUnverified && retryFailed
+          {isRetryableReattachError(error) && retryFailed
             ? `\n${translate(
                 'auto.components.terminal.pane.TerminalErrorToast.retryUnavailable',
                 'Retry could not reconnect yet. Try again shortly.'
@@ -363,7 +381,7 @@ export function TerminalErrorToast({
             )}
           </button>
         ) : null}
-        {paneOwnerUnverified && onRetry ? (
+        {isRetryableReattachError(error) && onRetry ? (
           <Button
             variant="outline"
             size="xs"

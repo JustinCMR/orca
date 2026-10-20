@@ -19,8 +19,10 @@ import {
 } from './pty-connection-test-environment'
 
 type HiddenPaneBinding = {
+  dispose: () => void
   noteVisibilityResume: () => void
   wakeHibernatedAgentIfArmed: (claimed?: Set<string>) => string | null
+  retryHeldAgentWake: () => Promise<boolean> | null
 }
 
 const PANE_KEY = makePaneKey('tab-1', LEAF_2)
@@ -78,12 +80,14 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
     } as StoreState
   }
 
-  function connectHiddenPane(restoredPtyId: string | null): {
+  function connectHiddenPane(
+    restoredPtyId: string | null,
+    transport = createResumingTransport()
+  ): {
     transport: MockTransport
     binding: HiddenPaneBinding
     isVisibleRef: { current: boolean }
   } {
-    const transport = createResumingTransport()
     transportFactoryQueue.push(transport)
     const isVisibleRef = { current: false }
     const deps = buildPaneConnectionDeps(() => mockStoreState, {
@@ -191,18 +195,109 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       expect(resumeCommands(transport)[1]).toContain("'resume' 'codex-session-1'")
     })
 
-    it.each([
-      ['live', true],
-      ['unverifiable', null]
-    ] as const)('only attaches a hidden %s session at mount', async (_label, isLive) => {
-      seedSleepingPane(DEAD_SESSION_ID)
-      setHostLiveness(isLive)
-      const { transport } = connectHiddenPane(DEAD_SESSION_ID)
-      await flushAsyncTicks(10)
+    it.each(['reconnect', 'terminal_pane_owner_unverified'])(
+      'recovers a hidden uncertain attach (%s) without granting creation, then reveals the live session',
+      async (message) => {
+        seedSleepingPane(DEAD_SESSION_ID)
+        setHostLiveness(null)
+        const remount = vi.fn(() => ({ remounted: true, generation: 1 }))
+        Object.assign(mockStoreState, { remountTerminalTabForRecovery: remount })
+        const first = connectHiddenPane(DEAD_SESSION_ID)
+        first.transport.connect.mockImplementation(async (opts: ResumingConnectOptions) => {
+          opts.callbacks?.onError?.(message)
+          return undefined
+        })
+        await flushAsyncTicks(10)
+        expect(first.transport.connect).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ sessionId: DEAD_SESSION_ID, attachOnly: true })
+        )
+        expect(remount).toHaveBeenCalledExactlyOnceWith(
+          'tab-1',
+          expect.objectContaining({
+            reason: 'reattach-unverifiable',
+            trigger: 'automatic'
+          })
+        )
+        expect(mockStoreState.terminalLayoutsByTabId?.['tab-1']?.ptyIdsByLeafId[LEAF_2]).toBe(
+          DEAD_SESSION_ID
+        )
+        first.binding.dispose()
+        setHostLiveness(true)
+        const recovered = connectHiddenPane(DEAD_SESSION_ID)
+        await flushAsyncTicks(10)
+        expect(recovered.transport.connect).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            sessionId: DEAD_SESSION_ID,
+            attachOnly: true
+          })
+        )
+        expect(recovered.transport.getPtyId()).toBe(DEAD_SESSION_ID)
+        expect(mockStoreState.clearSleepingAgentSession).not.toHaveBeenCalled()
+        recovered.isVisibleRef.current = true
+        recovered.binding.noteVisibilityResume()
+        await flushAsyncTicks(10)
+        expect(recovered.transport.connect).toHaveBeenCalledTimes(1)
+      }
+    )
 
-      expect(transport.connect).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ sessionId: DEAD_SESSION_ID, attachOnly: true })
+    it('keeps an exhausted background hold retryable after a failed explicit wake and fences disposal', async () => {
+      seedSleepingPane(DEAD_SESSION_ID)
+      mockStoreState.activeWorktreeId = 'another-worktree'
+      const { isPaneSpawnDeferred } = await import('@/lib/pane-spawn-deferral-registry')
+      const remount = vi.fn(() => ({ remounted: false, declinedBy: 'settled-failure' }))
+      Object.assign(mockStoreState, { remountTerminalTabForRecovery: remount })
+      setHostLiveness(null)
+      const held = connectHiddenPane(DEAD_SESSION_ID)
+      await flushAsyncTicks(10)
+      expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
+      held.transport.connect.mockResolvedValueOnce(undefined)
+      await expect(held.binding.retryHeldAgentWake()).resolves.toBe(false)
+      expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
+      expect(held.transport.connect.mock.calls[1]?.[0]).not.toHaveProperty('attachOnly')
+      held.transport.connect
+        .mockImplementationOnce(async (opts: ResumingConnectOptions) => {
+          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
+          return undefined
+        })
+        .mockResolvedValueOnce(undefined)
+      await expect(held.binding.retryHeldAgentWake()).resolves.toBe(false)
+      expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
+      const late = createDeferred<void>()
+      held.transport.connect.mockImplementationOnce(() => late.promise)
+      const pending = held.binding.retryHeldAgentWake()
+      held.binding.dispose()
+      const successor = connectHiddenPane(DEAD_SESSION_ID)
+      await flushAsyncTicks(10)
+      late.resolve()
+      await expect(pending).resolves.toBe(false)
+      expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
+      setHostLiveness(true)
+      await expect(successor.binding.retryHeldAgentWake()).resolves.toBe(true)
+      expect(isPaneSpawnDeferred(PANE_KEY)).toBe(false)
+    })
+
+    it('authorizes exactly one full restore if reveal wins the initial attach race', async () => {
+      seedSleepingPane(DEAD_SESSION_ID)
+      const transport = createResumingTransport()
+      const attach = createDeferred<void>()
+      transport.connect.mockImplementationOnce((opts: ResumingConnectOptions) =>
+        attach.promise.then(() => {
+          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
+        })
       )
+      const held = connectHiddenPane(DEAD_SESSION_ID, transport)
+      await flushAsyncTicks(10)
+      held.isVisibleRef.current = true
+      held.binding.noteVisibilityResume()
+      attach.resolve()
+      await flushAsyncTicks(20)
+      expect(held.transport.connect).toHaveBeenCalledTimes(2)
+      expect(held.transport.connect.mock.calls[0]?.[0]).toMatchObject({
+        sessionId: DEAD_SESSION_ID,
+        attachOnly: true
+      })
+      expect(held.transport.connect.mock.calls[1]?.[0]).not.toHaveProperty('attachOnly')
+      expect(held.transport.getPtyId()).toBe(DEAD_SESSION_ID)
     })
 
     it('resumes a hidden pane at mount when a background mount asked for its tab', async () => {
@@ -253,8 +348,14 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       const transport = createMockTransport()
       // The attach-only and woken reattaches come back with no PTY, so the pane falls back to a fresh resume.
       transport.connect
-        .mockResolvedValueOnce(undefined)
-        .mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(async (opts: ResumingConnectOptions) => {
+          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
+          return undefined
+        })
+        .mockImplementationOnce(async (opts: ResumingConnectOptions) => {
+          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
+          return undefined
+        })
         .mockResolvedValue('resumed-pty')
       transportFactoryQueue.push(transport)
       connectPane(
@@ -372,12 +473,17 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       await flushAsyncTicks(10)
       const fallback = createDeferred<string>()
       // The reattach comes back with no PTY; the fallback spawn is still starting.
-      transport.connect.mockResolvedValueOnce(undefined).mockImplementationOnce(() =>
-        fallback.promise.then((ptyId) => {
-          transport.getPtyId.mockReturnValue(ptyId)
-          return ptyId
+      transport.connect
+        .mockImplementationOnce(async (opts: ResumingConnectOptions) => {
+          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
+          return undefined
         })
-      )
+        .mockImplementationOnce(() =>
+          fallback.promise.then((ptyId) => {
+            transport.getPtyId.mockReturnValue(ptyId)
+            return ptyId
+          })
+        )
 
       isVisibleRef.current = true
       binding.noteVisibilityResume()

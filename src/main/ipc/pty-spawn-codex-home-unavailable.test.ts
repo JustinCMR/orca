@@ -5,6 +5,7 @@ import { setupPtyIpcSuite } from './pty-ipc-test-harness'
 import { createDaemonActiveProviderFixtures } from './pty-ipc-daemon-provider-fixtures'
 import { ManagedCodexHomeTemporarilyUnavailableError } from '../codex-accounts/host-codex-managed-home-ownership'
 import { registerPtyHandlers } from './pty/register-handlers'
+import { SessionNotFoundError } from '../daemon/daemon-errors'
 import type { PrepareCodexSessionResume } from './pty/host-env/types'
 
 vi.mock('electron', () => import('./pty-ipc-mock-registry').then((m) => m.electronModuleMock()))
@@ -133,6 +134,63 @@ describe('registerPtyHandlers Codex launch refusal on an unreadable managed home
   }
 
   describe('local pty:spawn handler', () => {
+    it('attaches without an owner or launch preparation, even when the selected account is unreadable', async () => {
+      const daemonSpawn = setupDaemonAdapter()
+      const resolveHome = vi.fn((): string | null => {
+        throw new ManagedCodexHomeTemporarilyUnavailableError()
+      })
+      const prepareResume = vi.fn<PrepareCodexSessionResume>()
+      const trust = vi.spyOn(
+        await import('../agent-workspace-trust-spawn'),
+        'applyAgentWorkspaceTrustToSpawn'
+      )
+      const account = vi.spyOn(
+        await import('../antigravity/native-account-launch'),
+        'prepareAntigravityAccountForLaunch'
+      )
+      const profile = vi.spyOn(
+        await import('../claude-accounts/claude-profile-installed-router'),
+        'withClaudeProfileTerminalEnv'
+      )
+      const runtime = makeRuntime()
+      register(resolveHome, runtime, prepareResume)
+      const request = {
+        cols: 80,
+        rows: 24,
+        sessionId: 'saved-session',
+        attachOnly: true,
+        command: 'codex resume resume-session-1',
+        launchAgent: 'codex',
+        resumeProviderSession: RESUME_SESSION
+      }
+      daemonSpawn.mockImplementationOnce(async () => ({ id: request.sessionId, isReattach: true }))
+      await expect(handlers.get('pty:spawn')!(null, request)).resolves.toMatchObject({
+        id: request.sessionId,
+        isReattach: true
+      })
+      daemonSpawn.mockRejectedValueOnce(new SessionNotFoundError(request.sessionId))
+      await expect(handlers.get('pty:spawn')!(null, request)).rejects.toThrow('Session not found:')
+      expect(daemonSpawn).toHaveBeenCalledTimes(2)
+      expect(daemonSpawn.mock.calls[0]?.[0]).toMatchObject({
+        sessionId: request.sessionId,
+        attachOnly: true
+      })
+      expect(daemonSpawn.mock.calls[0]?.[0].command).toBeUndefined()
+      expect(resolveHome).not.toHaveBeenCalled()
+      expect(prepareResume).not.toHaveBeenCalled()
+      expect(trust).not.toHaveBeenCalled()
+      expect(account).not.toHaveBeenCalled()
+      expect(profile).not.toHaveBeenCalled()
+      expect(runtime.noteTerminalSpawnCommand).not.toHaveBeenCalled()
+      await expect(
+        handlers.get('pty:spawn')!(null, { ...request, replacesPtyId: 'live-owner' })
+      ).rejects.toThrow('terminal_attach_requires_existing_session')
+      expect(daemonSpawn).toHaveBeenCalledTimes(2)
+      profile.mockRestore()
+      trust.mockRestore()
+      account.mockRestore()
+    })
+
     it('spawns with the managed CODEX_HOME when the home reads back cleanly', async () => {
       readFileSyncMock.mockReturnValue(TEST_CODEX_AUTH_JSON)
       const daemonSpawn = setupDaemonAdapter()

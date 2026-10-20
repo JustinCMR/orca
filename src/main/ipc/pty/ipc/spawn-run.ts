@@ -8,8 +8,8 @@ import {
 import { releaseStoppedPaneBinding, stopReplacedPaneOwner } from '../pane/pane-owner-replacement'
 import { planPaneAgentLaunch } from './spawn-agent-launch'
 import { endPaneAgentLaunch } from './spawn-agent-launch-end'
-import { preparePtyIpcSpawnPreflight } from './spawn-preflight'
-import { assemblePtyIpcSpawnEnv } from './spawn-env'
+import { preparePtyIpcSpawnPreflight, preparePtyIpcLaunchAuth } from './spawn-preflight'
+import { assemblePtyIpcSpawnEnv, preparePtyIpcPaneIdentity } from './spawn-env'
 import { preparePtyIpcQoderCommand } from './spawn-qoder-command'
 import { buildPtyIpcSpawnOptions } from './spawn-options'
 import { executePtyIpcSpawn } from './spawn-execute'
@@ -29,6 +29,15 @@ function releaseAbandonedAgentTeamsLeader(ctx: PtyIpcSpawnState): void {
 }
 
 export async function runPtyIpcSpawn(deps: PtySpawnIpcDeps, args: PtySpawnIpcArgs) {
+  if (
+    args.attachOnly === true &&
+    (typeof args.sessionId !== 'string' ||
+      !args.sessionId.trim() ||
+      args.replacesPtyId !== undefined ||
+      args.agentLaunch !== undefined)
+  ) {
+    throw new Error('terminal_attach_requires_existing_session')
+  }
   const ctx = createPtyIpcSpawnState(deps, args)
   const replacedPaneKey =
     args.replacesPtyId !== undefined ? resolveEarlyPaneSpawnReservationKey(args) : null
@@ -57,8 +66,14 @@ export async function runPtyIpcSpawn(deps: PtySpawnIpcDeps, args: PtySpawnIpcArg
       await planPaneAgentLaunch(ctx)
     }
     await preparePtyIpcSpawnPreflight(ctx)
-    await assemblePtyIpcSpawnEnv(ctx)
-    await preparePtyIpcQoderCommand(ctx)
+    if (args.attachOnly === true) {
+      preparePtyIpcPaneIdentity(ctx)
+    } else {
+      await preparePtyIpcLaunchAuth(ctx)
+      const refreshAgentTeams = preparePtyIpcPaneIdentity(ctx)
+      await assemblePtyIpcSpawnEnv(ctx, refreshAgentTeams)
+      await preparePtyIpcQoderCommand(ctx)
+    }
     const earlyReserved = await buildPtyIpcSpawnOptions(ctx).catch((error: unknown) => {
       restoreProvisionalPtySize({
         sessionId: ctx.effectiveSessionId,

@@ -30,6 +30,16 @@ describe('local OpenCode model launch authority', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
+  it('rejects attach-only without an admitted ID before creation or replacement', async () => {
+    const claimReplacedPtyId = vi.fn()
+    await expect(
+      spawnIpcPty(options(), { ...connect, attachOnly: true, claimReplacedPtyId })
+    ).rejects.toThrow('terminal_attach_requires_existing_session')
+    expect(callRuntimeRpc).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+    expect(claimReplacedPtyId).not.toHaveBeenCalled()
+  })
+
   it('sends preferences to the execution host and attaches only to its returned PTY', async () => {
     const claimReplacedPtyId = vi.fn(() => 'pty_previous')
     expect(await spawnIpcPty(options(), { ...connect, claimReplacedPtyId })).toMatchObject({
