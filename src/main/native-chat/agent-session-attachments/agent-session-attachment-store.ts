@@ -32,6 +32,7 @@ import {
 
 const UPLOAD_MAX_CONCURRENT = 8
 const UPLOAD_IDLE_TTL_MS = 5 * 60 * 1000
+const FRESH_FILE_STREAM_HIGH_WATER_MARK = 1024 * 1024
 const NOT_FOUND = 'Attachment upload was not found'
 const NOT_AN_IMAGE = 'Not an attachment image'
 const PREVIEW_TOO_LARGE = 'file_too_large'
@@ -200,8 +201,17 @@ export class AgentSessionAttachmentStore {
         await (byteLength === 0
           ? writeFile(partPath, '', { flag: 'wx', mode: 0o600 })
           : pipeline(
-              handle.createReadStream({ start: 0, end: byteLength - 1, autoClose: false }),
-              createWriteStream(partPath, { flags: 'wx', mode: 0o600 })
+              handle.createReadStream({
+                start: 0,
+                end: byteLength - 1,
+                autoClose: false,
+                highWaterMark: FRESH_FILE_STREAM_HIGH_WATER_MARK
+              }),
+              createWriteStream(partPath, {
+                flags: 'wx',
+                mode: 0o600,
+                highWaterMark: FRESH_FILE_STREAM_HIGH_WATER_MARK
+              })
             ))
         const after = await handle.stat()
         if (
