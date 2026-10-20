@@ -117,6 +117,10 @@ describe('restored chat workspace Sleep', () => {
       if (answer === 'slept') {
         act(() => feed().emit({ type: 'end' }))
         expect(visible()).toBe(false)
+        cleanup()
+        render(<StructuredAgentSessionStatusBridge />)
+        expect(visible()).toBe(false)
+        expect(selectIsSleepingWorktree(useAppStore.getState(), 'wt-1')).toBe(true)
       }
       expect(visible()).toBe(answer !== 'slept')
       expect(selectIsSleepingWorktree(useAppStore.getState(), 'wt-1')).toBe(answer === 'slept')

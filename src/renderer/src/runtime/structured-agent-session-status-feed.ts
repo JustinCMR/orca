@@ -41,6 +41,8 @@ export function structuredAgentSessionStatusFeedKey(target: RuntimeClientTarget)
 function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
   let snapshot: StructuredAgentSessionStatusSnapshot = new Map()
   const confirmedSessions = new Set<string>()
+  // Disconnect revokes live execution, but each chat's last Sleep answer still holds.
+  const knownSleep = new Map<string, number | null>()
   const listeners = new Set<() => void>()
   const activations = new Set<symbol>()
   let sleepResolved = false
@@ -64,9 +66,17 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
       reconnectAttempt = 0
       for (const session of event.sessions) {
         confirmedSessions.add(session.sessionId)
+        knownSleep.set(
+          session.sessionId,
+          session.hostExecutionOwned ? null : (session.sleptAt ?? null)
+        )
       }
     } else if (event.type === 'status') {
       confirmedSessions.add(event.session.sessionId)
+      knownSleep.set(
+        event.session.sessionId,
+        event.session.hostExecutionOwned ? null : (event.session.sleptAt ?? null)
+      )
     } else {
       return
     }
@@ -214,12 +224,8 @@ function createOwner(target: RuntimeClientTarget): OwnedStatusFeed {
     },
     getSnapshot: () => snapshot,
     getSessionSleepState: (sessionId) => {
-      const summary = snapshot.get(sessionId)
-      if (confirmedSessions.has(sessionId) && summary) {
-        return summary.hostExecutionOwned ? null : (summary.sleptAt ?? null)
-      }
-      // The bridge retains prior answers; an unanswered chat falls back awake on failure.
-      return sleepResolved ? null : undefined
+      const known = knownSleep.get(sessionId)
+      return known !== undefined ? known : sleepResolved ? null : undefined
     },
     getSessionObservation: (sessionId) =>
       confirmedSessions.has(sessionId) ? 'live' : 'unverifiable',
