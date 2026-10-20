@@ -136,10 +136,7 @@ function textNamesSkill(text: string, name: string): boolean {
   const token = `$${name}`
   for (let at = text.indexOf(token); at !== -1; at = text.indexOf(token, at + 1)) {
     // Ends where a skill name can't continue, as Codex reads a mention: `$review,` names `review`.
-    if (
-      (at === 0 || /\s/u.test(text.charAt(at - 1))) &&
-      !/[\w:-]/u.test(text.charAt(at + token.length))
-    ) {
+    if (!/[\w:-]/u.test(text.charAt(at + token.length))) {
       return true
     }
   }

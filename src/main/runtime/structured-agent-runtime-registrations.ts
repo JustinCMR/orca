@@ -50,6 +50,7 @@ function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredA
   return new CodexStructuredSessionAdapter({
     resolveAccountKind: deps.resolveCodexAccountKind,
     atRestCommands: createCodexAtRestSkillCatalog({
+      resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
       resolveWorkspacePath: deps.resolveWorkspacePath,
       resolveEnvironment: () => context.environment.resolveAgentEnvironment('codex'),
       refreshEnvironmentAfterMiss: context.environment.refreshAfterMissingProgram,

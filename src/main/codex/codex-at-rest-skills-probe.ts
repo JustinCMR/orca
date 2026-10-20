@@ -4,7 +4,11 @@ import {
   isLegacyAgentSessionAccountHome,
   requireLegacyAgentSessionAccountHome
 } from '../../shared/agent-session-account-home'
-import { CODEX_READ_ONLY_APP_SERVER_ARGS } from '../codex-cli/codex-read-only-app-server-args'
+import { codexStructuredLaunchArgs } from './codex-structured-launch-args'
+import {
+  LEGACY_NATIVE_CHAT_VISUALS_DIR_ENV,
+  NATIVE_CHAT_SCRATCH_DIR_ENV
+} from '../native-chat/native-chat-visuals-delivery'
 import {
   AtRestCommandCatalog,
   type AtRestCommandScan
@@ -19,14 +23,13 @@ import {
 
 /** How long Codex has to answer `skills/list`. */
 const ANSWER_TIMEOUT_MS = 15_000
-/** How long a probe lives after it spawns. Plugins on, Codex starts its plugin sync and marketplace
- *  upgrades at startup (two git steps, 30 s each); killed before they finish, they leave their
- *  staging folders in CODEX_HOME for good and the next start clones again. */
+/** Startup grace for plugin sync; longer sync can still be interrupted and retain staging. */
 export const CODEX_SKILLS_PROBE_SETTLE_MS = 70_000
-/** Each probe starts a Codex process, so many folders opening at once wait their turn. */
+/** Bounds unanswered probes only; answered probes can still be settling. */
 const MAX_PROBES_ANSWERING = 2
 
 export type CodexAtRestSkillsDeps = CodexStructuredInvocationDeps & {
+  resolveLaunchArgs: () => Promise<string[]> | string[]
   resolveWorkspacePath: (workspaceId: string) => Promise<string>
   /** The sync a launch runs on this home first, so the probe reads what a launch would. */
   prepareHome?: (home: string) => void
@@ -51,8 +54,8 @@ const sleepFor = (ms: number): Promise<void> =>
 
 /**
  * Codex's own skills for the folder a resting Codex chat launches in, from one short-lived
- * app-server with plugins on (plugin skills exist only then). It answers as soon as Codex lists
- * them, then lives out the settle time so Codex's own startup work ends normally.
+ * app-server using the chat's plugin configuration. It answers immediately, then retains a
+ * startup grace period; that period does not guarantee plugin sync has finished.
  */
 export function createCodexAtRestSkillCatalog(deps: CodexAtRestSkillsDeps): AtRestCommandCatalog {
   const answering = new PrioritySemaphore(MAX_PROBES_ANSWERING)
@@ -89,7 +92,11 @@ async function probeCodexSkills(
   releaseSlot: () => void
 ): Promise<AtRestCommandScan> {
   const accountHomePath = requireLegacyAgentSessionAccountHome(record.accountHome).path
-  const { command, environment } = await resolveCodexStructuredInvocation(deps)
+  const { command, environment } = await resolveCodexStructuredInvocation({
+    ...deps,
+    resolveWorkingDirectory: () => cwd
+  })
+  const args = codexStructuredLaunchArgs(await deps.resolveLaunchArgs())
   deps.prepareHome?.(accountHomePath)
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? sleepFor
@@ -103,9 +110,11 @@ async function probeCodexSkills(
   void (deps.runSession ?? runCodexAppServerSession)(
     {
       command,
-      args: [...CODEX_READ_ONLY_APP_SERVER_ARGS],
+      args: [...args, 'app-server'],
+      cwd,
       cliPath: command,
       env: { ...definedEnv(environment), CODEX_HOME: accountHomePath },
+      envToDelete: [NATIVE_CHAT_SCRATCH_DIR_ENV, LEGACY_NATIVE_CHAT_VISUALS_DIR_ENV],
       timeoutMs: CODEX_SKILLS_PROBE_SETTLE_MS + ANSWER_TIMEOUT_MS,
       treeKillOnFinish: true
     },
@@ -122,10 +131,11 @@ async function probeCodexSkills(
         }
         // An older Codex has no list to give; the client keeps its folder scan.
         answer({ commands: undefined, fromAgent: true })
+      } finally {
+        // Settling holds a process, not an answering permit, including after a list failure.
+        releaseSlot()
+        await sleep(spawnedAt + CODEX_SKILLS_PROBE_SETTLE_MS - now())
       }
-      // Settling holds a process, not a slot: the next folder may start answering now.
-      releaseSlot()
-      await sleep(spawnedAt + CODEX_SKILLS_PROBE_SETTLE_MS - now())
     }
   ).catch(fail)
   return answered

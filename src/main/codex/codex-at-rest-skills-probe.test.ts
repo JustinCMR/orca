@@ -1,7 +1,7 @@
 // A Codex chat whose Codex is not running lists what Codex itself would load in the folder the
 // chat launches in, from one short-lived app-server that answers at once and then settles.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../shared/constants'
 import { agentSessionRecordFixture } from '../native-chat/agent-session-record-test-fixture'
 import type { CodexAppServerInvocation } from './codex-app-server-session'
@@ -23,7 +23,15 @@ describe('a resting Codex chat lists the skills Codex would load', () => {
     const settling: (() => void)[] = []
     const catalog = createCodexAtRestSkillCatalog({
       resolveWorkspacePath: async () => '/unused',
-      resolveEnvironment: async () => ({ PATH: '/bin' }),
+      resolveLaunchArgs: () => [
+        '--disable',
+        'plugins',
+        '-c',
+        'features.test=true',
+        '--sandbox',
+        'read-only'
+      ],
+      resolveEnvironment: async () => ({ PATH: '/bin', CUSTOM_AGENT_ENV: 'configured' }),
       resolveCommand: () => '/bin/codex',
       sleep: () => new Promise((resolve) => settling.push(resolve)),
       runSession: async (invocation, body) => {
@@ -54,13 +62,58 @@ describe('a resting Codex chat lists the skills Codex would load', () => {
     expect(catalog.read(two)?.filter((row) => row.kind === 'skill')).toEqual([
       { name: 'second', kind: 'skill', path: '/work/two/second/SKILL.md' }
     ])
-    // Plugins stay on, or Codex lists no plugin skill; the finish kills the tree while it lives.
+    // Saved plugin settings and other config match a real chat; permission flags stay normalized.
     expect(invocations.map((invocation) => invocation.args)).toEqual([
-      expect.not.arrayContaining(['features.plugins=false']),
-      expect.not.arrayContaining(['features.plugins=false'])
+      ['--disable', 'plugins', '-c', 'features.test=true', 'app-server'],
+      ['--disable', 'plugins', '-c', 'features.test=true', 'app-server']
     ])
+    expect(invocations.map(({ cwd }) => cwd)).toEqual(['/work/one', '/work/two'])
     expect(invocations.every((invocation) => invocation.treeKillOnFinish)).toBe(true)
-    expect(invocations[0]?.env).toMatchObject({ CODEX_HOME: '/home/me/.codex' })
+    expect(invocations[0]?.env).toMatchObject({
+      CODEX_HOME: '/home/me/.codex',
+      CUSTOM_AGENT_ENV: 'configured'
+    })
+    expect(invocations[0]?.envToDelete).toEqual(['ORCA_CHAT_SCRATCH_DIR', 'ORCA_CHAT_VISUALS_DIR'])
     settling.forEach((resolve) => resolve())
   })
+
+  it.each(['method not found', 'temporary failure'])(
+    'retains the floor after %s without holding the answer',
+    async (message) => {
+      let release = () => {}
+      let closed = false
+      const sleep = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          })
+      )
+      const catalog = createCodexAtRestSkillCatalog({
+        resolveWorkspacePath: async () => '/work',
+        resolveLaunchArgs: () => [],
+        resolveCommand: () => '/bin/codex',
+        now: () => 0,
+        sleep,
+        runSession: async (_invocation, body) => {
+          try {
+            return await body({
+              request: async () => {
+                throw new Error(message)
+              },
+              notify: () => {}
+            })
+          } finally {
+            closed = true
+          }
+        }
+      })
+      const record = floatingCodexChat('failed', '/work')
+      catalog.read(record)
+      await catalog.settled(record, 1_000)
+      expect(sleep).toHaveBeenCalledWith(70_000)
+      expect(closed).toBe(false)
+      release()
+      await vi.waitFor(() => expect(closed).toBe(true))
+    }
+  )
 })

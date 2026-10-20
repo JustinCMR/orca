@@ -1,4 +1,5 @@
 import type { DiscoveredSkill, SkillSourceKind } from './skills'
+import { locatedPickerSkill } from './native-chat-reported-skill'
 import type { NativeChatSessionSkill, SlashCommandSuggestion } from './native-chat-slash-commands'
 import { isSafeDisplayCharacter, stripUnsafeDisplayCharacters } from './skill-display-text'
 import { compareBaseSensitivityLocaleText } from './locale-text-collators'
@@ -25,6 +26,8 @@ export type NativeChatPickerItem =
       sources: { sourceKind: SkillSourceKind; skillFilePath: string }[]
       /** The file the agent selects this skill by, when the agent reported it; a pick sends it. */
       path?: string
+      /** Distinguishes same-named reported files independently of description or scanner scope. */
+      location?: string
     }
 
 export type NativeChatSkillDiscoverySnapshot = {
@@ -168,9 +171,21 @@ function mergeNativeChatSkills(
   // description and scope for the names both know about.
   // A reported skill with its file is its own row: two skills may share a name, and the pick
   // tells the agent which file it means.
+  const nameCounts = new Map<string, number>()
+  for (const skill of sessionSkills ?? []) {
+    nameCounts.set(skill.name, (nameCounts.get(skill.name) ?? 0) + 1)
+  }
   const located = (sessionSkills ?? []).flatMap((skill) =>
     skill.path && isTokenSafe(skill.name)
-      ? [locatedPickerSkill(skill, skill.path, exactPaths.get(skill.path), skillSigil)]
+      ? [
+          locatedPickerSkill(
+            skill,
+            skill.path,
+            exactPaths.get(skill.path),
+            skillSigil,
+            (nameCounts.get(skill.name) ?? 0) > 1
+          )
+        ]
       : []
   )
   const names =
@@ -193,24 +208,6 @@ function mergeNativeChatSkills(
         : skill
     })
   ].sort(comparePickerSkills)
-}
-
-function locatedPickerSkill(
-  skill: NativeChatSessionSkill,
-  path: string,
-  scanned: DiscoveredSkill | undefined,
-  skillSigil: '/' | '$'
-): Extract<NativeChatPickerItem, { kind: 'skill' }> {
-  const description = skill.description ?? scanned?.description
-  return {
-    kind: 'skill',
-    id: `skill:${path}`,
-    name: skill.name,
-    token: `${skillSigil}${skill.name}`,
-    description: description ? sanitizePickerText(description, 240) : null,
-    sources: scanned ? [{ sourceKind: scanned.sourceKind, skillFilePath: path }] : [],
-    path
-  }
 }
 
 function pickerSkill(

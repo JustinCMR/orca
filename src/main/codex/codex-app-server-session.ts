@@ -22,6 +22,7 @@ import { createProviderRecordReader } from '../provider-process/provider-record-
 export type CodexAppServerInvocation = {
   command: string
   args: string[]
+  cwd?: string
   /**
    * The resolved CLI path, used to pair the CLI with the `node` it was installed
    * against — without it a CLI resolved out of a version-manager directory runs
@@ -121,7 +122,7 @@ export async function runCodexAppServerSession<T>(
     : childEnv
   // The Codex connection's managed process and close policy, so a session closes the same way.
   const managed = spawnManagedProviderProcess(
-    { command: invocation.command, args: invocation.args },
+    { command: invocation.command, args: invocation.args, cwd: invocation.cwd },
     {
       site: CODEX_APP_SERVER_KILL_SITE,
       inheritedEnv: pairedEnv,
@@ -129,6 +130,7 @@ export async function runCodexAppServerSession<T>(
         // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: every stdio slot is 'pipe', so stdin, stdout and stderr exist.
         spawnImpl(spec.program, [...(spec.args ?? [])], {
           env: spec.env,
+          cwd: spec.cwd,
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
           ...(spec.detached ? { detached: true } : {})

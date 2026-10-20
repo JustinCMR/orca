@@ -70,6 +70,9 @@ function MenuRow({
             {description}
           </Text>
         ) : null}
+        {row.kind === 'skill' && row.location ? (
+          <Text style={styles.description}>{row.location}</Text>
+        ) : null}
       </View>
     </Pressable>
   )
