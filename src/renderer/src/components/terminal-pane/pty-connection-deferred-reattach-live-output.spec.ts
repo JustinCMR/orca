@@ -383,6 +383,7 @@ export function registerPtyConnectionDeferredReattachLiveOutputTests(): void {
       const transport = createMockTransport('tab-pty')
       transport.connect.mockImplementation(
         async ({ sessionId, callbacks }: { sessionId?: string; callbacks?: ConnectCallbacks }) => {
+          callbacks?.onReattachDetermined?.()
           callbacks?.onData?.('dead-session-final-frame')
           return { id: sessionId ?? 'tab-pty', exitedBeforeAttach: true }
         }
