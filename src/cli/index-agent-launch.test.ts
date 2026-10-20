@@ -45,6 +45,10 @@ import { RuntimeClientError, RuntimeRpcFailureError } from './runtime-client'
 import { buildWorktree, okFixture, queueFixtures, worktreeListFixture } from './test-fixtures'
 import { pairRuntimeEnvironment, useWorktreeAwarenessEnvironment } from './index-test-harness'
 import { agentLaunchFixture, agentLaunchHostFixture } from './agent-launch-test-fixtures'
+import {
+  AGENT_LAUNCH_RUNTIME_CAPABILITIES,
+  AGENT_LAUNCH_SURFACE_RUNTIME_CAPABILITY
+} from '../shared/agent-launch-runtime-capability'
 
 const WORKTREE_ID = 'repo-1::/tmp/repo'
 
@@ -307,6 +311,62 @@ describe('orca cli agent launch', () => {
     expect(launchCalls()).toEqual([])
   })
 
+  it('sends the surface pick with the launch', async () => {
+    queueFixtures(callMock, agentLaunchHostFixture(), agentLaunchFixture(WORKTREE_ID))
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(
+      [
+        'agent',
+        'launch',
+        '--agent',
+        'codex',
+        '--worktree',
+        `id:${WORKTREE_ID}`,
+        '--surface',
+        'terminal',
+        '--json'
+      ],
+      '/tmp/repo/src'
+    )
+
+    expect(callMock).toHaveBeenCalledWith(
+      'agent.launchReplay',
+      expect.objectContaining({ surface: 'terminal' })
+    )
+  })
+
+  // An older host strips `surface` and follows its own setting, so the pick never reaches it.
+  it.each([
+    { host: 'older than agent.launch', capabilities: [] },
+    {
+      host: 'without the surface pick',
+      capabilities: AGENT_LAUNCH_RUNTIME_CAPABILITIES.filter(
+        (capability) => capability !== AGENT_LAUNCH_SURFACE_RUNTIME_CAPABILITY
+      )
+    }
+  ])('refuses --surface on a host $host rather than dropping it', async ({ capabilities }) => {
+    queueFixtures(callMock, okFixture('req_status', { capabilities }))
+
+    const output = await runRefused([
+      'worktree',
+      'create',
+      '--repo',
+      'id:repo-1',
+      '--name',
+      'design',
+      '--no-parent',
+      '--agent',
+      'codex',
+      '--surface',
+      'terminal',
+      '--json'
+    ])
+
+    expect(output).toContain('cannot start an agent as a chat or a terminal on request')
+    expect(launchCalls()).toEqual([])
+  })
+
   it('refuses a model on a host older than agent.launch rather than dropping it', async () => {
     queueFixtures(callMock, okFixture('req_status', { capabilities: [] }))
 
@@ -332,7 +392,9 @@ describe('orca cli agent launch', () => {
   it.each([
     [['--agent', 'codex', '--effort', 'high'], '--effort requires --model'],
     [['--model', 'gpt-5.5'], '--model requires --agent'],
-    [['--agent', 'codex', '--model', 'gpt-5.5', '--effort', 'turbo'], 'does not support effort']
+    [['--agent', 'codex', '--model', 'gpt-5.5', '--effort', 'turbo'], 'does not support effort'],
+    [['--surface', 'terminal'], '--surface requires --agent'],
+    [['--agent', 'codex', '--surface', 'tui'], '--surface must be one of: chat, terminal']
   ])('refuses %j before creating anything', async (flags, message) => {
     const output = await runRefused([
       'worktree',

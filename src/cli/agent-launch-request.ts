@@ -1,17 +1,19 @@
 /**
  * How the CLI starts an agent: through `agent.launch`, the host's one launch point that the desktop
- * and phone use too. The user's Chat UI setting picks a chat or a terminal, and the receipt says
- * which ran and why; the CLI never picks the surface itself.
+ * and phone use too. `--surface chat|terminal` picks a chat or a terminal for this launch; without
+ * it the user's Chat UI setting does. Either way the receipt says which ran and why.
  */
 
 import { randomUUID } from 'node:crypto'
 import type { AgentLaunchPrompt, AgentLaunchResult } from '../shared/agent-launch-intent'
+import { AGENT_LAUNCH_SURFACES, type AgentLaunchSurface } from '../shared/agent-launch-surface'
 import { checkAgentLaunchModelPreferences } from '../shared/agent-launch-model-preferences'
 import {
   AGENT_LAUNCH_RUNTIME_CAPABILITY,
   AGENT_LAUNCH_PROMPT_CARRY_RUNTIME_CAPABILITY,
   AGENT_LAUNCH_LOCAL_PRESENTATION_RUNTIME_CAPABILITY,
-  AGENT_LAUNCH_REPLAY_REQUIRED_RUNTIME_CAPABILITY
+  AGENT_LAUNCH_REPLAY_REQUIRED_RUNTIME_CAPABILITY,
+  AGENT_LAUNCH_SURFACE_RUNTIME_CAPABILITY
 } from '../shared/agent-launch-runtime-capability'
 import { createStructuredAgentSessionOperationId } from '../shared/structured-agent-session-mutation'
 import { parseAgentSessionOperationTimestamp } from '../shared/agent-session-host-authority'
@@ -38,6 +40,19 @@ export type CliAgentLaunch = {
   prompt?: AgentLaunchPrompt
   sessionOptions?: Record<string, string>
   operationId?: string
+  surface?: AgentLaunchSurface
+}
+
+function readSurfaceFlag(flags: Flags): AgentLaunchSurface | undefined {
+  const surface = getOptionalStringFlag(flags, 'surface')
+  if (surface === undefined) {
+    return undefined
+  }
+  const known = AGENT_LAUNCH_SURFACES.find((candidate) => candidate === surface)
+  if (!known) {
+    throw new RuntimeClientError('invalid_argument', '--surface must be one of: chat, terminal')
+  }
+  return known
 }
 
 export function parseCliAgent(value: string): TuiAgent {
@@ -73,8 +88,10 @@ export function readCliAgentLaunch(
   if (operationId !== undefined && parseAgentSessionOperationTimestamp(operationId) === null) {
     throw new RuntimeClientError('invalid_argument', 'Malformed --retry-launch operation ID')
   }
+  const surface = readSurfaceFlag(flags)
   return {
     agent,
+    ...(surface ? { surface } : {}),
     ...(operationId ? { operationId } : {}),
     // A blank prompt is no prompt: the agent starts with nothing sent.
     ...(typeof prompt === 'string' && prompt.trim()
@@ -87,6 +104,10 @@ export function readCliAgentLaunch(
 export function hasLaunchModelFlags(flags: Flags): boolean {
   return flags.has('model') || flags.has('effort')
 }
+
+// An older host strips `surface` and follows its own setting, so an explicit pick never reaches it.
+export const SURFACE_UNSUPPORTED_MESSAGE =
+  'This Orca host cannot start an agent as a chat or a terminal on request. Update Orca on the execution host, or omit --surface.'
 
 export async function getAgentLaunchCapabilities(
   client: RuntimeClient
@@ -115,6 +136,9 @@ export async function callAgentLaunch(
       'incompatible_runtime',
       'This Orca host cannot safely carry launch prompts. Update Orca on the execution host.'
     )
+  }
+  if (launch.surface && !capabilities.includes(AGENT_LAUNCH_SURFACE_RUNTIME_CAPABILITY)) {
+    throw new RuntimeClientError('incompatible_runtime', SURFACE_UNSUPPORTED_MESSAGE)
   }
   if (!capabilities.includes(AGENT_LAUNCH_LOCAL_PRESENTATION_RUNTIME_CAPABILITY)) {
     throw new RuntimeClientError(

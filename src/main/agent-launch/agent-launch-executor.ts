@@ -74,6 +74,7 @@ export async function executeAgentLaunch(
         ? undefined
         : readAgentLaunchModeSettings(runtime, intent.nativeChatDefault),
       ...(execution.terminalOnly ? { terminalOnly: true } : {}),
+      ...(intent.surface ? { surface: intent.surface } : {}),
       vocabulary
     })
   // The create's startup terminal is this launch's only surface, and the create delivers the text.
