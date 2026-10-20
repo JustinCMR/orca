@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { acquired, fakeCodex } from './codex-structured-session-adapter-fixture'
+import type { AgentJournalMessageItem } from '../../shared/agent-session-journal-types'
+import { queuedMessageWithEditedText } from '../../shared/queued-message-text-edit'
 
 function skill(name: string, path: string, enabled = true) {
   return { name, path, description: `${name} skill`, scope: 'user', enabled }
@@ -77,6 +79,66 @@ describe('a running Codex chat lists and runs the skills Codex loaded', () => {
       { type: 'text', text: '$review this, then $gone' },
       { type: 'skill', name: 'review', path: REPO_REVIEW }
     ])
+  })
+
+  it('keeps untouched queue picks but dispatches edited and retyped mentions as plain text', async () => {
+    const text = 'project: $review personal: $review'
+    const skills = [
+      { name: 'review', path: REPO_REVIEW },
+      { name: 'review', path: PERSONAL_REVIEW }
+    ]
+    const body: AgentJournalMessageItem = {
+      kind: 'message',
+      role: 'user',
+      blocks: [
+        { type: 'text', text },
+        { type: 'image-ref', path: '/work/repo/example.png' }
+      ],
+      sentAs: 'goal',
+      from: { kind: 'agent', senders: [], orchestration: null },
+      skills
+    }
+    const unchanged = queuedMessageWithEditedText(body, text)!
+    expect(unchanged).toBe(body)
+    expect(unchanged.skills).toBe(skills)
+    const deleted = queuedMessageWithEditedText(body, 'later')!
+    const retyped = queuedMessageWithEditedText(deleted, text)!
+    for (const [edited, expectedSkills] of [
+      [unchanged, skills],
+      [queuedMessageWithEditedText(body, 'project: $review')!, []],
+      [queuedMessageWithEditedText(body, `${text} please`)!, []],
+      [retyped, []]
+    ] as const) {
+      expect(edited).toMatchObject({
+        kind: body.kind,
+        role: body.role,
+        from: body.from,
+        sentAs: body.sentAs
+      })
+      const codex = fakeCodex({
+        'skills/list': () => ({
+          data: [
+            { cwd: '/work/repo', skills: skills.map((s) => skill(s.name, s.path)), errors: [] }
+          ]
+        }),
+        'turn/start': () => ({ turn: { id: 'turn-1' } })
+      })
+      const adapter = await acquired(codex)
+      await settle()
+      await adapter.dispatch({
+        sessionId: 'session-1',
+        clientMessageId: 'queued-pick',
+        fence: 7,
+        body: edited
+      })
+      expect(
+        codex.connections[0].calls.find((call) => call.method === 'turn/start')?.params?.input
+      ).toEqual([
+        ...edited.blocks.filter((block) => block.type === 'text'),
+        { type: 'localImage', path: '/work/repo/example.png' },
+        ...expectedSkills.map((s) => ({ type: 'skill', ...s }))
+      ])
+    }
   })
 
   it('reports nothing when Codex has no skills/list, so the client keeps its scan', async () => {

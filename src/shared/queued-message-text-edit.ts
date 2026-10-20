@@ -40,5 +40,7 @@ export function queuedMessageWithEditedText(
   if (!placed) {
     blocks.unshift({ type: 'text', text })
   }
-  return { ...body, blocks }
+  // Plain-text edits cannot retain which occurrence owned a picked file.
+  const { skills: _pickedSkills, ...plainBody } = body
+  return { ...plainBody, blocks }
 }
