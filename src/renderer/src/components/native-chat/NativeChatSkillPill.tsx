@@ -12,7 +12,8 @@ function titleWords(name: string): string {
 
 /** `$work-pets:create-pet` reads "Create Pet (Work Pets)": the skill, then the plugin it is in. */
 export function skillLabel(token: string): string {
-  const name = token.replace(/^[$/]/, '')
+  // Pi's `/skill:<name>`: the icon already says skill.
+  const name = token.replace(/^[$/](skill:)?/, '')
   const split = name.indexOf(':')
   return split > 0
     ? `${titleWords(name.slice(split + 1))} (${titleWords(name.slice(0, split))})`

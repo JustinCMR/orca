@@ -127,11 +127,12 @@ export async function runCodexAppServerSession<T>(
       site: CODEX_APP_SERVER_KILL_SITE,
       inheritedEnv: pairedEnv,
       spawnImpl: (spec) =>
-        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: every stdio slot is 'pipe', so stdin, stdout and stderr exist.
+        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the managed spec's first three stdio slots are 'pipe', so stdin, stdout and stderr exist.
         spawnImpl(spec.program, [...(spec.args ?? [])], {
           env: spec.env,
           cwd: spec.cwd,
-          stdio: ['pipe', 'pipe', 'pipe'],
+          // The managed spec's slots, so the supervisor's group-report channel survives.
+          stdio: spec.stdio ?? ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
           ...(spec.detached ? { detached: true } : {})
         }) as ChildProcessWithoutNullStreams
