@@ -566,7 +566,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
         mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY] = { ...record, updatedAt: 9 }
       }
       if (outcome === 'after-child') {
-        const heartbeat = mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]
+        const heartbeat = mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]!
         void selected.then(() => {
           mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY] = { ...heartbeat, updatedAt: 10 }
         })
@@ -597,9 +597,9 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
         failed ? 'failed' : outcome.startsWith('record') ? 'superseded' : 'success'
       )
       if (outcome.startsWith('record')) {
-        expect(mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]?.providerSession.id).toBe(
-          'successor-session'
-        )
+        expect(mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]).toMatchObject({
+          providerSession: { id: 'successor-session' }
+        })
         expect(mockStoreState.agentLaunchConfigByPaneKey[PANE_KEY]?.launchConfig).toEqual(recipe)
         expect(cleared).not.toHaveBeenCalled()
         const stored = errors[2].join('\n')

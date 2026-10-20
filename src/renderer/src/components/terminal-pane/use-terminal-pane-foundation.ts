@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { IDisposable } from '@xterm/xterm'
+import type { PanePtyBinding } from './pty-connection/pane-pty-binding'
 import { useAppStore } from '../../store'
 import { hydrateRuntimeEnvironmentSshState } from '@/runtime/runtime-environment-ssh-state'
 import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
@@ -53,7 +54,9 @@ export function useTerminalPaneFoundation(props: TerminalPaneProps) {
   const paneMode2031Ref = useRef<Map<number, boolean>>(new Map())
   const paneKittyKeyboardModesRef = useRef<Map<number, TerminalKittyKeyboardModeTracker>>(new Map())
   const paneLastThemeModeRef = useRef<Map<number, 'dark' | 'light'>>(new Map())
-  const panePtyBindingsRef = useRef<Map<number, IDisposable>>(new Map())
+  const panePtyBindingsRef = useRef<
+    Map<number, IDisposable & Pick<PanePtyBinding, 'isHeldAgentWakeConnected'>>
+  >(new Map())
   const replayingPanesRef = useRef<Map<number, number>>(new Map())
   const isActiveRef = useRef(isActive)
   // Event/PTY callbacks need current visibility before passive effects run.
