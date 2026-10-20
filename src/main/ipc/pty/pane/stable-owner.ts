@@ -1,3 +1,4 @@
+import { attachOnlySpawnOptions } from './attach-only-spawn-options'
 import { rollbackWorkspaceSessionAfterFailedAsyncWrite } from '../../../persistence/restoring-sessions/workspace-session-write-rollback'
 import { cloneWorkspaceSessionState } from '../../../persistence/restoring-sessions/session-owner-fields'
 import { toSshExecutionHostId } from '../../../../shared/execution-host'
@@ -18,7 +19,8 @@ import {
   TerminalSessionOwnerUnverifiedError
 } from '../../../daemon/daemon-errors'
 import { ptyIncarnationById } from '../provider/ownership-state'
-import { releaseAbsentPaneOwner } from './absent-pane-owner'
+import { keepAbsentPaneBindingForSwap, releaseAbsentPaneOwner } from './absent-pane-owner'
+import { excludeReplacedPaneOwner, type ReplacedPaneOwner } from './replaced-pane-owner'
 import { spawnCommitBindingOrigin } from '../../../persistence/loading-store/pty-binding-span'
 
 export type StablePaneOwner = {
@@ -181,6 +183,8 @@ export type StablePaneSpawnContext = {
   onFreshSpawn?: (result: PtySpawnResult) => void
   /** Creation forbidden: absence is returned as SessionNotFoundError and the owner is kept. */
   attachOnly?: boolean
+  /** Only a spawn holding the pane's reservation: it binds next, so its bind swaps the dead id. */
+  keepAbsentBinding?: (dead: ReplacedPaneOwner) => void
 }
 
 export function stablePanePersistenceFence(
@@ -221,26 +225,6 @@ export async function persistAdmittedStablePaneBinding(args: {
   return true
 }
 
-/** Adopts `options.sessionId` only: no startup command, agent delivery or new-session claim. */
-function attachOnlySpawnOptions(options: PtySpawnOptions): PtySpawnOptions {
-  if (!options.sessionId) {
-    throw new SessionNotFoundError('')
-  }
-  return {
-    ...options,
-    attachOnly: true,
-    isNewSession: undefined,
-    command: undefined,
-    commandDelivery: undefined,
-    startupCommandDelivery: undefined,
-    launchAgent: undefined,
-    startupIngress: undefined,
-    agentSessionEnsure: undefined,
-    agentSessionCreateOperationId: undefined,
-    onPtySpawnCommitted: undefined
-  }
-}
-
 export async function attachStablePaneOwner(
   args: StablePaneSpawnContext & { owner: StablePaneOwner }
 ): Promise<{ result: PtySpawnResult; owner: StablePaneOwner } | null> {
@@ -274,10 +258,13 @@ export async function attachStablePaneOwner(
     ) {
       throw new Error('terminal_pane_owner_changed')
     }
-    if (!(await releaseAbsentPaneOwner(args, owner))) {
+    const kept = args.keepAbsentBinding ? keepAbsentPaneBindingForSwap(args, owner) : null
+    if (kept) {
+      args.keepAbsentBinding?.(kept)
+    } else if (!(await releaseAbsentPaneOwner(args, owner))) {
       throw new Error('terminal_pane_owner_changed')
     }
-    if (args.resolveOwner?.()) {
+    if (excludeReplacedPaneOwner(args.resolveOwner?.() ?? null, kept)) {
       throw new Error('terminal_pane_owner_changed')
     }
     return null

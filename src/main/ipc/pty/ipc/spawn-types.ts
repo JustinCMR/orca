@@ -17,6 +17,7 @@ import type {
   PrepareCodexSessionResume
 } from '../host-env/types'
 import type { StablePaneOwner } from '../pane/stable-owner'
+import type { ReplacedPaneOwner } from '../pane/replaced-pane-owner'
 import type { ResolvedPtyHost } from '../provider/registry'
 import type { PtySpawnCodexResumeDeps } from '../spawn-host-env'
 
@@ -79,6 +80,8 @@ export type AdoptStablePaneArgs = {
   leafId: string
   ownsPaneSpawnReservation?: true
   attachOnly?: boolean
+  /** See StablePaneSpawnContext; only with `ownsPaneSpawnReservation`. */
+  keepAbsentBinding?: (dead: ReplacedPaneOwner) => void
 }
 
 export type AdoptStablePaneResult = {

@@ -76,7 +76,8 @@ export async function adoptStablePane(
     connectionId: args.connectionId,
     resolveOwner: () =>
       resolveStablePaneOwner(runtime, store, paneKey, args.worktreeId, args.connectionId),
-    attachOnly: args.attachOnly
+    attachOnly: args.attachOnly,
+    keepAbsentBinding: args.ownsPaneSpawnReservation ? args.keepAbsentBinding : undefined
   })
   // Why unshared: a create-capable spawn joining this would inherit its refusal to create.
   if (!ownerKey || args.attachOnly) {
