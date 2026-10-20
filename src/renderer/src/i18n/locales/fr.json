@@ -1217,6 +1217,7 @@
         "machineDisplayState": {
           "starting": "Démarrage",
           "running": "En cours",
+          "stopping": "Mise en veille…",
           "sleeping": "En veille",
           "archived": "Archivée",
           "unreachable": "Injoignable",
