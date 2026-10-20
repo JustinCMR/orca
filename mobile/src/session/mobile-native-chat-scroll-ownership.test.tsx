@@ -394,7 +394,8 @@ it.each([true, false])(
     expect(owners).toEqual(tentative)
     const reused = roots.frame(`run:${split[0]}`)!
     reader(reused, 40)
-    draw([user, a, b])
+    // Still working: a settled turn folds this row away behind its "Worked for" line.
+    draw([user, a, b], { working: true })
     expect([original, ...split]).not.toContain(owners[1])
     expect(store.read(oldKey)).toBe(false)
     expect(store.runScroll.get(oldKey)?.top).toBe(111)
@@ -457,24 +458,24 @@ it('waits for simultaneous inner rest, releases on close/scope change, and separ
   draw([user, a], { scope: 'other' })
   await leaving
   vi.stubGlobal('navigator', { userAgent: 'AppleWebKit Safari' })
-  draw([user, a], { scope: 'other', open: false, working: true })
+  draw([user, a], { scope: 'live', open: false, working: true })
   act(() => container.querySelector<HTMLElement>('[data-live]')!.click())
   const key = `run:${owners[1]}`
   const live = roots.frame(key)!
   const end = live.scrollTop
   expect(end).toBe(live.scrollHeight - live.clientHeight)
   reader(live, end - 100)
-  draw([user, a], { scope: 'other', open: false, working: true, shift: 40 })
+  draw([user, a], { scope: 'live', open: false, working: true, shift: 40 })
   expect(roots.frame(key)).toBe(live)
   expect(live.scrollTop).toBe(end - 100)
   expect(store.runScroll.get(key)?.followsEnd).toBe(false)
   reader(live, live.scrollHeight - live.clientHeight - 20)
   await vi.advanceTimersByTimeAsync(160)
-  draw([user, a, b], { scope: 'other', open: false, working: true, shift: 40 })
+  draw([user, a, b], { scope: 'live', open: false, working: true, shift: 40 })
   expect(live.scrollTop).toBe(live.scrollHeight - live.clientHeight)
-  draw([user, a, b], { scope: 'other', open: false, working: true, shown: false, shift: 40 })
+  draw([user, a, b], { scope: 'live', open: false, working: true, shown: false, shift: 40 })
   store.runScroll.set(key, { top: 37, followsEnd: false })
-  draw([user, a, b], { scope: 'other', open: false, working: true, shift: 40 })
+  draw([user, a, b], { scope: 'live', open: false, working: true, shift: 40 })
   expect(roots.frame(key)?.scrollTop).toBe(37)
   detach()
   pageMotion.release()
