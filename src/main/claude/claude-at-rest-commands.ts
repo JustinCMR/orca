@@ -44,7 +44,7 @@ export class ClaudeAtRestCommandCatalog extends AtRestCommandCatalog {
         supportsClaudeStructuredLocation(record.location) &&
         isLegacyAgentSessionAccountHome(record.accountHome),
       resolveWorkspacePath: deps.resolveWorkspacePath,
-      scan: (record, cwd) => scanClaudeAtRest(deps, probes, record, cwd),
+      scan: (record, cwd, isCurrent) => scanClaudeAtRest(deps, probes, record, cwd, isCurrent),
       ...(deps.now ? { now: deps.now } : {})
     })
   }
@@ -54,21 +54,31 @@ async function scanClaudeAtRest(
   deps: ClaudeAtRestCommandsDeps,
   probes: PrioritySemaphore,
   record: AgentSessionRecord,
-  cwd: string
+  cwd: string,
+  isCurrent: () => boolean
 ): Promise<AtRestCommandScan> {
   const account = requireLegacyAgentSessionAccountHome(record.accountHome).path
   if (deps.probe) {
     const release = await probes.acquire(0)
     try {
+      if (!isCurrent()) {
+        return { commands: undefined, fromAgent: false }
+      }
       return {
-        commands: await deps.probe({ cwd, accountHomePath: account }),
+        commands: await deps.probe({ cwd, accountHomePath: account, isCurrent }),
         fromAgent: true
       }
     } catch (error) {
+      if (!isCurrent()) {
+        return { commands: undefined, fromAgent: false }
+      }
       console.warn('[claude] listing the at-rest `/` commands failed; reading folders:', error)
     } finally {
       release()
     }
+  }
+  if (!isCurrent()) {
+    return { commands: undefined, fromAgent: false }
   }
   const [custom, discovered] = await Promise.all([
     scanClaudeCommandFolders([join(cwd, '.claude', 'commands'), join(account, 'commands')]),

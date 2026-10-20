@@ -4,6 +4,8 @@ import type { AgentSessionSlashCommand } from '../../../shared/agent-session-wir
 /** The `/` surface of a chat whose agent is not running, read where the provider reads its own on
  *  this host. `read` is undefined until known; `onChange` fires when it changes. */
 export type StructuredAgentSessionAtRestCommands = {
+  retireContext?(workspaceId?: string): void
+  dispose?(): void
   read(record: AgentSessionRecord): AgentSessionSlashCommand[] | undefined
   onChange(listener: () => void): () => void
   /** Resolves once no scan for this record is running, or when `budgetMs` ends. */

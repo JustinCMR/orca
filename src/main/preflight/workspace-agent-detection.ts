@@ -1,4 +1,6 @@
 import { WORKSPACE_ON_OTHER_RUNTIME } from '../../shared/protocol-version'
+import { refreshAtRestCommandContext } from '../native-chat/agent-session-wire/at-rest-command-context'
+import { captureHostShellEnvironment } from '../runtime/structured-agent-shell-environment'
 import {
   getRepoExecutionHostId,
   getSshTargetIdForExecutionHost,
@@ -149,7 +151,10 @@ export async function refreshAgentsOnHost(host: AgentDetectionHost): Promise<Ref
   if (host.kind === 'ssh') {
     throw new SshHostNotServedError(host.connectionId)
   }
-  const result = await refreshShellPathAndDetectAgents(host.context)
-  agentRefreshListeners.forEach((listener) => listener())
-  return result
+  return refreshAtRestCommandContext(async () => {
+    const result = await refreshShellPathAndDetectAgents(host.context)
+    await captureHostShellEnvironment()
+    agentRefreshListeners.forEach((listener) => listener())
+    return result
+  })
 }

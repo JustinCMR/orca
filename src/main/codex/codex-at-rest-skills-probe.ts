@@ -66,7 +66,7 @@ export function createCodexAtRestSkillCatalog(deps: CodexAtRestSkillsDeps): AtRe
       supportsCodexStructuredLocation(record.location) &&
       isLegacyAgentSessionAccountHome(record.accountHome),
     resolveWorkspacePath: deps.resolveWorkspacePath,
-    scan: async (record, cwd) => {
+    scan: async (record, cwd, isCurrent) => {
       const acquired = await answering.acquire(0)
       let released = false
       const release = (): void => {
@@ -76,7 +76,9 @@ export function createCodexAtRestSkillCatalog(deps: CodexAtRestSkillsDeps): AtRe
         }
       }
       try {
-        return await probeCodexSkills(deps, record, cwd, release)
+        return isCurrent()
+          ? await probeCodexSkills(deps, record, cwd, release, isCurrent)
+          : { commands: undefined, fromAgent: false }
       } finally {
         release()
       }
@@ -89,7 +91,8 @@ async function probeCodexSkills(
   deps: CodexAtRestSkillsDeps,
   record: AgentSessionRecord,
   cwd: string,
-  releaseSlot: () => void
+  releaseSlot: () => void,
+  isCurrent: () => boolean
 ): Promise<AtRestCommandScan> {
   const accountHomePath = requireLegacyAgentSessionAccountHome(record.accountHome).path
   const { command, environment } = await resolveCodexStructuredInvocation({
@@ -97,6 +100,9 @@ async function probeCodexSkills(
     resolveWorkingDirectory: () => cwd
   })
   const args = codexStructuredLaunchArgs(await deps.resolveLaunchArgs())
+  if (!isCurrent()) {
+    return { commands: undefined, fromAgent: false }
+  }
   deps.prepareHome?.(accountHomePath)
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? sleepFor
