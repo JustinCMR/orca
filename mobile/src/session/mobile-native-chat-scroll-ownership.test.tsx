@@ -175,7 +175,7 @@ function Chat({
   working = false
 }: {
   rows: NativeChatMessage[]
-  /** Runs and their lines start open, as a reader who opened them left them. */
+  /** Runs, their lines and settled turns start open, as a reader who opened them left them. */
   open?: boolean
   shown?: boolean
   scope?: string
@@ -241,6 +241,7 @@ function Chat({
               message,
               rowKey: keys.keyOf(message),
               ...turns.resolveRow(i, message),
+              ...(open ? { foldedAway: false } : {}),
               runOwner: keys.runOwners.get(message.id),
               structuredActivityUi: structured
             })
@@ -394,8 +395,7 @@ it.each([true, false])(
     expect(owners).toEqual(tentative)
     const reused = roots.frame(`run:${split[0]}`)!
     reader(reused, 40)
-    // Still working: a settled turn folds this row away behind its "Worked for" line.
-    draw([user, a, b], { working: true })
+    draw([user, a, b])
     expect([original, ...split]).not.toContain(owners[1])
     expect(store.read(oldKey)).toBe(false)
     expect(store.runScroll.get(oldKey)?.top).toBe(111)
