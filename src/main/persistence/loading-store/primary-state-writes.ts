@@ -63,7 +63,11 @@ export class PrimaryStateWriteOperations {
       }
       let mutation: DurableProfileStateMutation<T>
       try {
-        mutation = this.runAdmittedMutationCallback('mutate', mutate)
+        try {
+          mutation = this.runAdmittedMutationCallback('mutate', mutate)
+        } finally {
+          notifyWorkspaceSessionWritten(runtime)
+        }
       } catch (error) {
         await stopAfterFailedPrimaryStateMutation(runtime, error)
         throw error
@@ -88,13 +92,18 @@ export class PrimaryStateWriteOperations {
         }
       } catch (error) {
         if (profileStateWriterFailureOutcome(error) !== 'indeterminate') {
-          if (mutation.rollback) {
+          try {
             try {
-              this.runAdmittedMutationCallback('rollback', mutation.rollback)
-            } catch (rollbackError) {
-              await stopAfterFailedPrimaryStateMutation(runtime, rollbackError)
-              throw rollbackError
+              if (mutation.rollback) {
+                this.runAdmittedMutationCallback('rollback', mutation.rollback)
+              }
+            } finally {
+              // Unscheduled getter edits need publication even when there is nothing to restore.
+              notifyWorkspaceSessionWritten(runtime)
             }
+          } catch (recoveryError) {
+            await stopAfterFailedPrimaryStateMutation(runtime, recoveryError)
+            throw recoveryError
           }
         }
         throw error
@@ -111,8 +120,6 @@ export class PrimaryStateWriteOperations {
       return callback()
     } finally {
       runtime.durableMutationPhase = null
-      // Durable writers may edit sessions without scheduling a save; a rollback republishes.
-      notifyWorkspaceSessionWritten(runtime)
     }
   }
 
