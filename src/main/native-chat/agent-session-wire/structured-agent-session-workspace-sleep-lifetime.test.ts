@@ -178,14 +178,14 @@ it('marks only the chats a Sleep that asked proved stopped, until the next send'
   await attach()
   const send = async (text: string) => {
     const body = hostTestMessage(text)
-    expect(
-      await host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
-    ).toMatchObject({ ok: true })
+    const params = { envelope: envelope('agentSession.send', { body }), body }
+    expect(await host.send(CALLER, params)).toMatchObject({ ok: true })
+    return params
   }
   // A stop that did not ask (a project move) marks nothing.
   expect(await host.sleepWorkspace('workspace-1')).toEqual({ stoppedSessionIds: ['session-alpha'] })
   expect(store.getRecord('session-alpha')?.sleptAt).toBeUndefined()
-  await send('after the move')
+  const previous = await send('after the move')
   await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(2))
 
   expect(await host.sleepWorkspace('workspace-1', true)).toEqual({
@@ -194,11 +194,13 @@ it('marks only the chats a Sleep that asked proved stopped, until the next send'
   const sleptAt = store.getRecord('session-alpha')?.sleptAt
   expect(sleptAt).toEqual(expect.any(Number))
   expect(host.readStatusSummary('session-alpha')?.sleptAt).toBe(sleptAt)
+  expect(await host.send(CALLER, previous)).toMatchObject({ ok: true, replayed: true })
+  expect(store.getRecord('session-alpha')?.sleptAt).toBe(sleptAt)
 
   await send('wake up')
-  await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(3))
   expect(store.getRecord('session-alpha')?.sleptAt).toBeUndefined()
   expect(host.readStatusSummary('session-alpha')?.sleptAt).toBeUndefined()
+  await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(3))
 
   // A send admitted before the final receipt step leaves the chat awake.
   const close = host['lifetime'].closeForWorkspaceSleep

@@ -52,7 +52,7 @@ const structuredChatWorktreeIds = new WeakMap<
  *
  * Why the host's Sleep mark rather than the provider child: the child starts only on a send and the
  * host's idle sweep stops it, so keying on it would put every quiet chat workspace to sleep after a
- * restart or a pause. Only the user's Sleep marks a chat, and the next send it hands over clears it.
+ * restart or a pause. Only the user's Sleep marks a chat, and the next admitted send clears it.
  */
 export function getWorktreeIdsWithStructuredChat(
   unifiedTabsByWorktree: Record<string, Tab[]> | null | undefined,

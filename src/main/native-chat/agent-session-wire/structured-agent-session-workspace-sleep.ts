@@ -134,8 +134,7 @@ async function settleWorkspaceSleepChat(
   return marked ? { stopped: true } : null
 }
 
-/** A send the host hands over wakes a chat Sleep put to rest, whichever client sent it. Never
- *  holds the send back: a failed write is only logged. */
+/** A newly recorded send wakes the chat; replay and held drafts never reach this point. */
 export async function clearStructuredAgentSessionSleepMark(
   deps: Pick<StructuredAgentSessionHostDeps, 'store' | 'logger' | 'now'>,
   sessionId: string,

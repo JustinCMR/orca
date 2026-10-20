@@ -28,7 +28,6 @@ import { structuredAgentSessionFailureWordsContext } from './structured-agent-se
 import { recoverStructuredRewind } from './structured-rewind-recovery'
 import { retireOutgrownStructuredAgentSessionChild } from './structured-agent-session-outgrown-child'
 import { structuredAgentSessionLaunchPermission } from './structured-agent-session-launch-permission'
-import { clearStructuredAgentSessionSleepMark } from './structured-agent-session-workspace-sleep'
 import { acceptedNoLaterThan } from './structured-agent-session-start-failure-row'
 import type { StructuredAgentSessionAcquireAborts } from './structured-agent-session-acquire-aborts'
 
@@ -112,11 +111,6 @@ export function createStructuredAgentSessionConversationDelivery(input: {
         stopAgent: input.stopOutgrownAgent,
         logger: deps.logger
       })
-      await clearStructuredAgentSessionSleepMark(
-        deps,
-        sessionId,
-        input.clientDelivery.publishStatus
-      )
     },
     readiness: input.readiness,
     deliveryOrder: input.deliveryOrder,

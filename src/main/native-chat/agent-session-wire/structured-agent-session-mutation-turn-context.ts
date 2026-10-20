@@ -4,6 +4,7 @@ import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { AgentSessionMutationRequest } from './structured-agent-session-mutation-admission'
 import type { AgentSessionTurnContext } from './structured-agent-session-turns'
+import { clearStructuredAgentSessionSleepMark } from './structured-agent-session-workspace-sleep'
 
 export function mutationTurnContext<TValue>(
   request: Omit<AgentSessionMutationRequest<TValue>, 'plan'>,
@@ -34,6 +35,8 @@ export function mutationTurnContext<TValue>(
         .then(() => undefined),
     resolvedBy: request.callerKey,
     publish: () => request.publish(journal),
+    onSendAdmitted: () =>
+      clearStructuredAgentSessionSleepMark(request, sessionId, () => request.publish(journal)),
     now: () => request.now()
   }
 }
