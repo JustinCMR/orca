@@ -216,34 +216,9 @@ describe('registerPtyHandlers', () => {
     const listProcesses = vi.fn(async () => {
       throw new Error('listProcesses should not be called')
     })
-    const provider = {
-      spawn: vi.fn(),
-      write: vi.fn(),
-      resize: vi.fn(),
-      shutdown: vi.fn(),
-      sendSignal: vi.fn(),
-      getCwd: vi.fn(),
-      getInitialCwd: vi.fn(),
-      clearBuffer: vi.fn(),
-      acknowledgeDataEvent: vi.fn(),
-      hasChildProcesses: vi.fn(),
-      getForegroundProcess: vi.fn(),
-      serialize: vi.fn(),
-      revive: vi.fn(),
-      onData: vi.fn(() => () => {}),
-      onReplay: vi.fn(() => () => {}),
-      onExit: vi.fn(() => () => {}),
-      listProcesses,
-      attach: vi.fn(),
-      hasPty,
-      probePtyLiveness,
-      getDefaultShell: vi.fn(),
-      getProfiles: vi.fn()
-    }
-    setLocalPtyProvider(provider as never)
+    installDaemonTestProvider({ hasPty, probePtyLiveness, listProcesses })
     registerPtyHandlers(mainWindow as never)
-    const hasPtyIpc = (id: string) =>
-      Promise.resolve(handlers.get('pty:hasPty')!(null, { id })) as Promise<boolean | null>
+    const hasPtyIpc = (id: string) => Promise.resolve(handlers.get('pty:hasPty')!(null, { id }))
 
     await expect(hasPtyIpc('live-pty')).resolves.toBe(true)
     expect(probePtyLiveness).not.toHaveBeenCalled()
@@ -262,7 +237,7 @@ describe('registerPtyHandlers', () => {
     expect(listProcesses).not.toHaveBeenCalled()
 
     // Only the in-process sole owner may answer a miss false without asking the host.
-    setLocalPtyProvider({ ...provider, probePtyLiveness: undefined } as never)
+    installDaemonTestProvider({ hasPty, listProcesses, probePtyLiveness: undefined })
     await expect(hasPtyIpc('dead-pty')).resolves.toBe(null)
   })
   it('treats unsupported or failed single-PTY liveness as unknown', async () => {
