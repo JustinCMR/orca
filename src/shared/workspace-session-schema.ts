@@ -24,7 +24,10 @@ import type { TuiAgent } from './tui-agent'
 import type { WorkspaceSessionState } from './workspace-session-state-types'
 import { terminalTabIdSchema } from './terminal-tab-id-schema'
 import { terminalSurfaceTombstoneSchema } from './terminal-surface-tombstone-schema'
-import { parseExecutionHostId, type ExecutionHostId } from './execution-host'
+import {
+  executionHostIdSchema,
+  keepingStampedEntries
+} from './workspace-layout/terminal-host-stamp'
 import { isTuiAgent } from './tui-agent-config'
 import { isWorkspaceKey } from './workspace-scope'
 import {
@@ -92,16 +95,14 @@ export const terminalTabSchema = z.object({
 
 // ─── Unified tab model ──────────────────────────────────────────────
 
-const executionHostIdSchema = z.custom<ExecutionHostId>(
-  (value) => typeof value === 'string' && Boolean(parseExecutionHostId(value))
-)
-
 const tabSchema = z.object({
   id: z.string(),
   entityId: z.string(),
   groupId: z.string(),
   worktreeId: z.string(),
   executionHostId: executionHostIdSchema.optional(),
+  // Why any JSON: the setup key marks a cross-host terminal; a corrupt id stays remote, never local.
+  projectHostSetupId: z.json().optional(),
   contentType: tabContentTypeSchema,
   // Why: any agent a host registered, as the host published it. An id that is not an agent slug
   // degrades to absent, which renders no chat, rather than failing the whole-session parse; a
@@ -239,7 +240,7 @@ export const workspaceSessionStateSchema: z.ZodType<WorkspaceSessionState> = z.o
   ),
   unifiedTabs: salvagedOptional(
     'unifiedTabs',
-    salvagingRecord(worktreeIdSchema, salvagingArray(tabSchema))
+    salvagingRecord(worktreeIdSchema, salvagingArray(keepingStampedEntries(tabSchema)))
   ),
   tabGroups: salvagedOptional(
     'tabGroups',
