@@ -136,10 +136,7 @@ export function useNativeChatStructuredComposerSend({
                   'components.native-chat.composer.tooManySkills',
                   'Your message was not sent to {{agent}}. Keep at most {{limit}} selected skill files and try again.',
                   {
-                    agent:
-                      isTuiAgent(agent) || agent === 'dsb'
-                        ? getAgentLabel(agent)
-                        : formatAgentTypeLabel(agent),
+                    agent: isTuiAgent(agent) ? getAgentLabel(agent) : formatAgentTypeLabel(agent),
                     limit: MAX_SKILL_REFS
                   }
                 )
