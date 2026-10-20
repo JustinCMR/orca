@@ -34,6 +34,7 @@ function buildSession(overrides: Record<string, unknown> = {}): {
     disconnect: vi.fn(),
     serializeBuffer: vi.fn()
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture supplies the session members read by the selected reattach path.
   const session = {
     settlePaneAttachAttempt,
     transport,

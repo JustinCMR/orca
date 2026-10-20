@@ -11,6 +11,7 @@ import { LEAF_1 } from './pty-connection-test-pane-fixtures'
 import type { StoreState } from './pty-connection-test-store-state'
 
 export function createInitialStoreState(getState: () => StoreState): StoreState {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture supplies the state read by pane connections and the real record/config actions below.
   const state = {
     activeWorktreeId: 'wt-1',
     tabsByWorktree: {

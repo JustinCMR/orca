@@ -49,6 +49,7 @@ export type MockTransport = {
 
 export function createMockTransport(initialPtyId: string | null = null): MockTransport {
   let ptyId = initialPtyId
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this test transport supplies every MockTransport member used by the pane harness.
   const transport = {
     attach: vi.fn(({ existingPtyId }: { existingPtyId: string }) => {
       ptyId = existingPtyId
