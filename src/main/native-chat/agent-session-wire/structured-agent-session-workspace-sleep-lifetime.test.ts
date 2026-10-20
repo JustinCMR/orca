@@ -282,23 +282,37 @@ it('omits an unproven workspace child from the stop receipt', async () => {
   expect(store.getRecord(SESSION)).not.toBeNull()
 })
 
-it('does not count a chat whose send was accepted after the stop as stopped', async () => {
-  const { host } = hostTestState()
-  await attach()
-  host.deps.adapter.closeSession = vi.fn(async () => true)
-  await vi.waitFor(() => expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false))
-  const close = host['lifetime'].closeForWorkspaceSleep
-  vi.spyOn(host['lifetime'], 'closeForWorkspaceSleep').mockImplementation(async (...args) => {
-    const result = await close(...args)
-    const body = hostTestMessage('newer send')
-    // The later work exists once the send is accepted, not merely once it is queued.
-    const sent = host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
-    expect(await sent).toMatchObject({ ok: true })
-    return result
-  })
+it.each(['running', 'failed'] as const)(
+  'does not re-mark a chat after a newer %s send',
+  async (state) => {
+    const { host, acquire, store } = hostTestState()
+    await attach()
+    host.deps.adapter.closeSession = vi.fn(async () => true)
+    await vi.waitFor(() => expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false))
+    const close = host['lifetime'].closeForWorkspaceSleep
+    vi.spyOn(host['lifetime'], 'closeForWorkspaceSleep').mockImplementation(async (...args) => {
+      const result = await close(...args)
+      if (state === 'failed') {
+        acquire.mockRejectedValueOnce(new Error('provider unavailable'))
+      }
+      const body = hostTestMessage('newer send')
+      // The later work exists once the send is accepted, not merely once it is queued.
+      const sent = host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
+      expect(await sent).toMatchObject({ ok: true })
+      if (state === 'failed') {
+        await vi.waitFor(() => {
+          expect(host['runtimeState'].startFlights.has(SESSION)).toBe(false)
+          expect(host['conversationDelivery'].loop.isRunning(SESSION)).toBe(false)
+          expect(host['sessions'].get(SESSION)?.journal.pendingSubmissions()).toEqual([])
+        })
+      }
+      return result
+    })
 
-  expect(await host.sleepWorkspace('workspace-1')).toEqual({ stoppedSessionIds: [] })
-})
+    expect(await host.sleepWorkspace('workspace-1', true)).toEqual({ stoppedSessionIds: [] })
+    expect(store.getRecord(SESSION)?.sleptAt).toBeUndefined()
+  }
+)
 
 // A start runs outside the chat's lane, so Sleep reaches it through the start's own abort.
 it('stops an agent that is still starting', async () => {

@@ -49,6 +49,12 @@ export async function sleepStructuredAgentSessionWorkspace(
   // Admits every close synchronously; `async` turns a synchronous throw into a rejection.
   const stops = await Promise.allSettled(
     sessionIds.map(async (sessionId) => {
+      const admitted = new Set(
+        host.sessions
+          .get(sessionId)
+          ?.journal.submissions()
+          .map((send) => send.clientMessageId)
+      )
       const stop = await host.lifetime.closeForWorkspaceSleep(
         sessionId,
         workspaceId,
@@ -60,7 +66,11 @@ export async function sleepStructuredAgentSessionWorkspace(
           !stop ||
           !record ||
           !belongs(record.location) ||
-          record.lease.runtimeFence !== stop.fence
+          record.lease.runtimeFence !== stop.fence ||
+          host.sessions
+            .get(sessionId)
+            ?.journal.submissions()
+            .some((send) => !admitted.has(send.clientMessageId))
         ) {
           return null
         }
