@@ -49,7 +49,11 @@ function MenuRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={composerMenuInsertText(row)}
+      accessibilityLabel={
+        row.kind === 'skill' && row.location
+          ? `${row.token}, ${row.location}`
+          : composerMenuInsertText(row)
+      }
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={() => onPick(row)}
     >
