@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   SERVE_SUPERVISOR_APP_ROOT_ENV,
   relocateServeSupervisor,
+  restartServeSupervisorFromApp,
   serveSupervisorSnapshotRoot,
   type SupervisorRelocationDeps
 } from './serve-supervisor-relocation'
@@ -157,5 +158,55 @@ describe('relocateServeSupervisor', () => {
     await writeFile(join(appRoot, 'out', 'package.json'), '{"version":"1.0.2","commit":"ccc"}')
     await relocateServeSupervisor(deps({ pid: 300, isProcessAlive: (pid) => pid === 300 }))
     expect(await releaseCopies()).toHaveLength(1)
+  })
+
+  describe('restartServeSupervisorFromApp', () => {
+    const log = vi.fn()
+    const restart = (
+      env: NodeJS.ProcessEnv,
+      argv: string[],
+      execve: SupervisorRelocationDeps['execve'] = vi.fn()
+    ) => {
+      const execPath = deps().execPath
+      restartServeSupervisorFromApp({ env, execPath, execArgv: [], argv, appRoot, execve, log })
+      return { execve: vi.mocked(execve), execPath }
+    }
+
+    it('re-runs plain serve with the same arguments on the installed executable', () => {
+      const argv = ['/ignored', join(appRoot, 'out', 'cli', 'index.js'), 'serve', '--json']
+      const { execve, execPath } = restart({ ELECTRON_RUN_AS_NODE: '1' }, argv)
+      expect(execve).toHaveBeenCalledWith(execPath, [execPath, ...argv.slice(1)], {
+        ELECTRON_RUN_AS_NODE: '1'
+      })
+    })
+
+    it('re-runs a relocated supervisor from the app, which copies the new release aside', async () => {
+      const first = deps()
+      await relocateServeSupervisor(first)
+      const [, relocatedArgs, relocatedEnv] = vi.mocked(first.execve).mock.calls[0]
+      await writeFile(join(appRoot, 'out', 'package.json'), '{"version":"1.1.0","commit":"bbb"}')
+
+      const { execve, execPath } = restart(relocatedEnv, relocatedArgs)
+      const [, args, env] = execve.mock.calls[0]
+      expect(args).toEqual([
+        execPath,
+        join(appRoot, 'out', 'cli', 'index.js'),
+        'serve',
+        '--supervise'
+      ])
+      expect(env).not.toHaveProperty(SERVE_SUPERVISOR_APP_ROOT_ENV)
+
+      const again = deps({ env, argv: args })
+      await expect(relocateServeSupervisor(again)).resolves.toBe('relocated')
+      expect(vi.mocked(again.execve).mock.calls[0][1][1]).not.toBe(relocatedArgs[1])
+    })
+
+    it('logs instead of throwing when the restart fails, so the caller starts the update itself', () => {
+      const failing = vi.fn(() => {
+        throw new Error('EACCES')
+      })
+      expect(() => restart({}, ['/ignored', 'cli.js', 'serve'], failing)).not.toThrow()
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('EACCES'))
+    })
   })
 })

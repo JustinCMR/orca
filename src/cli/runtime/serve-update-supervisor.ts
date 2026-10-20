@@ -35,6 +35,8 @@ type ServeSupervisorArgs = {
   spec: ProcessSpec
   spawnChild: (spec: ProcessSpec) => ChildProcessHandle
   handoffPath: string | null
+  /** macOS: re-runs this process from the installed app, resuming the handoff; returns only on failure. */
+  restartFromInstalledApp?: (() => void) | null
 }
 
 export async function resumeInterruptedServeUpdate(
@@ -121,6 +123,10 @@ export async function superviseForegroundServe(
         )
         if (!(await mayRespawn())) {
           return 0
+        }
+        if (expectedHandoff) {
+          // Why: TCC charges every descendant to this process, whose executable the update deleted.
+          args.restartFromInstalledApp?.()
         }
         child = args.spawnChild(args.spec)
     }

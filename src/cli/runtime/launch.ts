@@ -37,6 +37,7 @@ import { reexecThisServeUnderInitReaper } from './serve-pid1-init-reaper'
 import { supervisedAppImageUpdate } from './serve-appimage-update'
 import {
   relocateThisServeSupervisor,
+  restartThisServeSupervisorFromApp,
   SERVE_SUPERVISOR_APP_ROOT_ENV
 } from './serve-supervisor-relocation'
 import { serverOnlyServeMessage } from './serve-app-launcher'
@@ -255,6 +256,11 @@ function spawnElectronServe(
   const spawnServeChild: ServeSpawnChild = shouldRedactSupervisedStdout(args.supervise === true)
     ? redactingSpawn(spawnProcess)
     : spawnProcess
+  // Why only our own executable: an override is a separate program the update does not delete.
+  const restartFromInstalledApp =
+    handoffPath && executable === process.execPath
+      ? () => restartThisServeSupervisorFromApp(resolveAppRoot())
+      : null
   const interruptedHandoff = handoffPath ? readServeUpdateHandoffSync(handoffPath) : null
   if (interruptedHandoff?.phase === 'install-requested') {
     // Why: the node-mode CLI is not an NSRunningApplication, so it can retain launchd ownership while ShipIt swaps the app.
@@ -262,7 +268,8 @@ function spawnElectronServe(
       spec,
       spawnChild: spawnServeChild,
       handoffPath: handoffPath!,
-      handoff: interruptedHandoff
+      handoff: interruptedHandoff,
+      restartFromInstalledApp
     })
   }
   if (isSupervisedSpawnHeld()) {
@@ -279,7 +286,8 @@ function spawnElectronServe(
     spawnChild: spawnServeChild,
     child,
     handoffPath,
-    expectedHandoff: null
+    expectedHandoff: null,
+    restartFromInstalledApp
   }).catch((error: unknown) => {
     // Why only a prompt abort: the registration abort kills the child before any JS runs.
     if (error instanceof MacServeStartupAbortError && Date.now() - spawnedAt < STARTUP_ABORT_MS) {

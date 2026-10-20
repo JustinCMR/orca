@@ -193,6 +193,54 @@ export async function relocateServeSupervisor(
   return 'relocated'
 }
 
+/**
+ * Re-runs this supervisor in place on the installed app after a macOS update deleted the files it
+ * runs from. A relocated supervisor restarts from the app's CLI so it copies the new release aside.
+ */
+export function restartServeSupervisorFromApp(
+  deps: Pick<
+    SupervisorRelocationDeps,
+    'env' | 'execPath' | 'argv' | 'appRoot' | 'execve' | 'log'
+  > & {
+    execArgv: string[]
+  }
+): void {
+  const env = { ...deps.env }
+  const relocated = Boolean(env[SERVE_SUPERVISOR_APP_ROOT_ENV])
+  delete env[SERVE_SUPERVISOR_APP_ROOT_ENV]
+  const cliEntry = relocated ? join(deps.appRoot, 'out', 'cli', 'index.js') : deps.argv[1]
+  try {
+    deps.execve(
+      deps.execPath,
+      [deps.execPath, ...deps.execArgv, cliEntry, ...deps.argv.slice(2)],
+      env
+    )
+  } catch (error) {
+    deps.log(
+      `[serve] Starting the update from here; could not restart from the installed app: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
+function execveThisProcess(file: string, args: string[], env: NodeJS.ProcessEnv): void {
+  if (!process.execve) {
+    throw new Error('this runtime cannot replace its own process')
+  }
+  process.execve(file, args, env)
+}
+
+export function restartThisServeSupervisorFromApp(appRoot: string): void {
+  restartServeSupervisorFromApp({
+    env: process.env,
+    execPath: process.execPath,
+    execArgv: process.execArgv,
+    argv: process.argv,
+    appRoot,
+    execve: execveThisProcess,
+    log: (line) => process.stderr.write(`${line}\n`)
+  })
+}
+
 export function relocateThisServeSupervisor(
   appRoot: string,
   userDataPath: string
@@ -205,12 +253,7 @@ export function relocateThisServeSupervisor(
     userDataPath,
     pid: process.pid,
     isProcessAlive,
-    execve: (file, args, env) => {
-      if (!process.execve) {
-        throw new Error('this runtime cannot replace its own process')
-      }
-      process.execve(file, args, env)
-    },
+    execve: execveThisProcess,
     log: (line) => process.stderr.write(`${line}\n`)
   })
 }
