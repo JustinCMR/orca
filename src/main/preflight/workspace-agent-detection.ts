@@ -18,7 +18,10 @@ import {
   resolveLocalWorkspaceRuntime,
   type ProjectRuntimeResolutionStore
 } from '../local-project-runtime-resolution'
-import type { PreflightRuntimeContext } from '../ipc/preflight-runtime-target'
+import {
+  getPreflightWslTarget,
+  type PreflightRuntimeContext
+} from '../ipc/preflight-runtime-target'
 import { resolveWorktreeHostRouting } from '../runtime/worktree-launch-host-repo'
 import { SshHostNotServedError } from '../providers/ssh-host-not-served-error'
 import {
@@ -151,10 +154,14 @@ export async function refreshAgentsOnHost(host: AgentDetectionHost): Promise<Ref
   if (host.kind === 'ssh') {
     throw new SshHostNotServedError(host.connectionId)
   }
-  return refreshAtRestCommandContext(async () => {
+  const wsl = getPreflightWslTarget(host.context)
+  const refresh = async (): Promise<RefreshAgentsResult> => {
     const result = await refreshShellPathAndDetectAgents(host.context)
-    await captureHostShellEnvironment()
+    if (!wsl) {
+      await captureHostShellEnvironment()
+    }
     agentRefreshListeners.forEach((listener) => listener())
     return result
-  })
+  }
+  return wsl ? refresh() : refreshAtRestCommandContext(refresh)
 }
