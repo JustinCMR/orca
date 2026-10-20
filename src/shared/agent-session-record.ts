@@ -163,8 +163,7 @@ export type AgentSessionRecord = {
   conversationCommand?: AgentSessionConversationCommandRecord
   /** The name Orca gave this conversation, so a later acquisition need not name it again. */
   conversationName?: string
-  /** When the user's Sleep stopped this chat; the next send it hands over clears it. Not
-   *  validated on load: a bad value only goes unpublished, and must never cost the chat. */
+  /** When the user's Sleep stopped this chat; the next send it hands over clears it. */
   sleptAt?: number
   launchArgs?: AgentSessionLaunchArgs
   lease: AgentSessionLease

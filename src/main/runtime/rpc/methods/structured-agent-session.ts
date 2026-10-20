@@ -173,6 +173,9 @@ export const STRUCTURED_AGENT_SESSION_METHODS = [
     params: SleepWorkspaceParams,
     handler: async (params, ctx) => {
       requireStructuredCapability(ctx)
+      if (params.markAsleep) {
+        return (await requireInstalledHost(ctx)).sleepWorkspace(params.workspaceId, true)
+      }
       const installed = getStructuredAgentSessionHost()
       if (installed) {
         return installed.sleepWorkspace(params.workspaceId, params.markAsleep)

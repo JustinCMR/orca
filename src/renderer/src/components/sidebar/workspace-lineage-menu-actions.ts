@@ -34,15 +34,13 @@ export function hasSleepableWorkspaceActivity(
   return (
     tabs.some((tab) => tabHasLivePty(activity.ptyIdsByTabId, tab.id)) ||
     (activity.browserTabsByWorktree[worktreeId] ?? []).length > 0 ||
-    // A chat counts while its host holds its process, or until its host marks it slept, so an
-    // idle-ended chat can still be slept (and hidden) on purpose.
+    // An idle-ended chat still needs Sleep to hide it, even when its legacy tab has no host stamp.
     (activity.unifiedTabsByWorktree[worktreeId] ?? []).some(
       (tab) =>
         isStructuredTab(tab) &&
         (activity.agentStatusByPaneKey[structuredAgentSessionPaneKey(tab.id, tab.entityId)]
           ?.structuredHostOwned === true ||
-          (!!tab.executionHostId &&
-            !isStructuredChatSlept(activity.structuredChatSleptAtByPaneKey, tab)))
+          !isStructuredChatSlept(activity.structuredChatSleptAtByPaneKey, tab))
     )
   )
 }

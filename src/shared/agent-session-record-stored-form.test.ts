@@ -98,6 +98,17 @@ const STORED_CODEX_ROW = JSON.stringify({
 })
 
 describe('a record row older builds wrote', () => {
+  it('drops an invalid Sleep timestamp without losing the conversation', () => {
+    const stored: unknown = { ...JSON.parse(STORED_CLAUDE_ROW), sleptAt: 'invalid' }
+    if (!isPersistedAgentSessionRecord(stored)) {
+      throw new Error('fixture row must be readable')
+    }
+    const decoded = decodePersistedAgentSessionRecord(stored)
+    expect(decoded.normalized).toBe(true)
+    expect(decoded.record.sleptAt).toBeUndefined()
+    expect(decoded.record.sessionId).toBe('session-alpha-1')
+  })
+
   it.each([
     ['Claude', STORED_CLAUDE_ROW],
     ['Codex', STORED_CODEX_ROW]

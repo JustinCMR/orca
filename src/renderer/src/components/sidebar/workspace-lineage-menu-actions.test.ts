@@ -177,7 +177,7 @@ describe('hasSleepableWorkspaceActivity', () => {
         structuredChatSleptAtByPaneKey: sleptAt
       })
     expect(activity(hostHeld(chat))).toBe(true)
-    expect(activity({})).toBe(false)
+    expect(activity({})).toBe(true)
     // An ended chat stays sleepable until its host marks that exact tab's session slept.
     const ended = { ...chat, executionHostId: 'local' as const }
     expect(activity({}, ended)).toBe(true)
