@@ -10,7 +10,7 @@ import { resolveHiddenRestoreScrollbackRows } from '../terminal-hidden-restore-s
 import { shouldIgnoreStalePanePtyLayoutBinding } from './pane-pty-layout-binding'
 
 import { hasEmptyReattachRetireEvidence } from './empty-reattach-retire-evidence'
-import type { ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
+import type { ColdRestoreAgentResumeStartup, ReattachResultDecision } from './fresh-spawn-types'
 
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
@@ -48,9 +48,7 @@ type ReattachResultSession = ReattachPayloadSession &
     | 'warnParkRevealNoHostImage'
     | 'scheduleReattachIdleAgentCursorReset'
     | 'serializeHiddenOutputSnapshot'
-    | 'settlePaneAttachAttempt'
     | 'setPanePtyFitBinding'
-    | 'startFreshColdRestoreAgentResume'
     | 'structuralReplayCoordinator'
     | 'syncPanePtyLayoutBinding'
     | 'clearExitedPanePtyLayoutBinding'
@@ -65,12 +63,12 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
     staleSessionId?: string | null,
     coldRestoreStartup?: ColdRestoreAgentResumeStartup | null,
     attemptGeneration = session.transportStreamGeneration
-  ): Promise<boolean> => {
+  ): Promise<ReattachResultDecision> => {
     if (session.disposed) {
-      return false
+      return { kind: 'superseded', generation: attemptGeneration }
     }
     if (attemptGeneration !== session.transportStreamGeneration) {
-      return false
+      return { kind: 'superseded', generation: attemptGeneration }
     }
     const isCurrentReattachTransport = (): boolean =>
       !session.disposed &&
@@ -79,7 +77,7 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       session.deps.paneTransportsRef.current.get(session.pane.id) === session.transport &&
       attemptGeneration === session.transportStreamGeneration
     if (!isCurrentReattachTransport()) {
-      return false
+      return { kind: 'superseded', generation: attemptGeneration }
     }
     // Why: bump only once this attempt owns the stream, or a superseded result
     // would cancel the current attempt's in-flight snapshot prepaint.
@@ -96,7 +94,7 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
 
     if (connectResult?.exitedBeforeAttach) {
       // Why: the transport already delivered the dead session's final frame + exit; treat as terminal state, not a failed reattach.
-      return true
+      return { kind: 'ended', generation: attemptGeneration }
     }
 
     const ptyId =
@@ -119,19 +117,20 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       if (staleSessionId) {
         session.deps.clearTabPtyId(session.deps.tabId, staleSessionId)
       }
-      session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
-        forceBlankRestoredViewport: true
-      })
-      return false
+      return { kind: 'continue-fresh' }
     }
-    session.registerEffectiveLaunchConfig(connectResult?.launchConfig, {
-      ...(coldRestoreStartup ? { launchToken: coldRestoreStartup.launchToken } : {}),
-      ...(connectResult?.launchAgent
-        ? { launchAgent: connectResult.launchAgent }
-        : coldRestoreStartup
-          ? { launchAgent: coldRestoreStartup.agent }
-          : {})
-    })
+    session.registerEffectiveLaunchConfig(
+      connectResult?.launchConfig,
+      {
+        ...(coldRestoreStartup ? { launchToken: coldRestoreStartup.launchToken } : {}),
+        ...(connectResult?.launchAgent
+          ? { launchAgent: connectResult.launchAgent }
+          : coldRestoreStartup
+            ? { launchAgent: coldRestoreStartup.agent }
+            : {})
+      },
+      coldRestoreStartup
+    )
     if (connectResult?.sessionExpired) {
       if (staleSessionId) {
         session.clearExitedPanePtyLayoutBinding(staleSessionId)
@@ -142,10 +141,7 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
         session.deps.clearTabPtyId(session.deps.tabId, staleSessionId)
       }
       // Why: a host can invalidate the PTY while the tab stays mounted; replace it in place, not with a stale overlay.
-      session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
-        forceBlankRestoredViewport: true
-      })
-      return false
+      return { kind: 'continue-fresh' }
     }
     const isCurrentReattachPayload = (): boolean => {
       const currentPtyId = session.transport.getPtyId()
@@ -154,14 +150,8 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       return isCurrentReattachTransport() && (currentPtyId === ptyId || hasExplicitPtyId)
     }
     if (!isCurrentReattachPayload()) {
-      return false
+      return { kind: 'superseded', generation: attemptGeneration }
     }
-    // The first authoritative attach of the pane a recovery remount produced:
-    // the observation the ledger was waiting for. Placed past the no-PTY-id and
-    // session-expired branches so a failure can never be reported as a success.
-    // Those branches fall through to startFreshColdRestoreAgentResume and leave
-    // the attempt pending, which the ledger's bound then ages out.
-    session.settlePaneAttachAttempt?.('success')
     // Strict precedence snapshot > replay > coldRestore: paint exactly one, else overlapping tails duplicate TUI output on worktree switch.
     const hasStructuralReplay = Boolean(
       connectResult?.snapshot || connectResult?.replay || connectResult?.coldRestore
@@ -179,10 +169,7 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       } else {
         session.syncPanePtyLayoutBinding(null)
       }
-      session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
-        forceBlankRestoredViewport: true
-      })
-      return false
+      return { kind: 'continue-fresh' }
     }
     session.setPanePtyFitBinding(ptyId)
     // Keep the session-local identity in step with the transport before any
@@ -265,7 +252,7 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
         noHostImageReason = verdict.reason
       }
       if (!isCurrentReattachPayload()) {
-        return false
+        return { kind: 'superseded', generation: attemptGeneration }
       }
     }
     // Keep the model paint in the structural transaction so live output cannot overtake the snapshot.
@@ -295,8 +282,11 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
       await applyReattachPayload()
       await fitAfterReattachRestore()
     }
-    if (!isCurrentReattachPayload() || !reattachPayload.reattachPayloadApplied) {
-      return false
+    if (!isCurrentReattachPayload()) {
+      return { kind: 'superseded', generation: attemptGeneration }
+    }
+    if (!reattachPayload.reattachPayloadApplied) {
+      return { kind: 'failed', generation: attemptGeneration }
     }
     if (unverifiableParkRevealLedger !== undefined) {
       // After the payload, so the retry's own structural repaint queues behind this attempt instead of nesting in it.
@@ -307,6 +297,14 @@ export function bindHandleReattachResult(sessionBag: ConnectPanePtySession): voi
     session.scheduleReattachIdleAgentCursorReset()
 
     scheduleRuntimeGraphSync()
-    return true
+    return {
+      kind: 'connected',
+      ptyId,
+      generation: attemptGeneration,
+      agentResumed:
+        Boolean(reattachPayload.preparedStartup) && !connectResult?.agentResumeUnavailable,
+      preparedStartup: reattachPayload.preparedStartup,
+      resumeUnavailable: Boolean(connectResult?.agentResumeUnavailable)
+    }
   }
 }

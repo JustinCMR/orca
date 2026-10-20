@@ -42,6 +42,7 @@ function createSession(connect: () => Promise<unknown>) {
     pane: { id: 1, leafId: 'leaf' },
     transport,
     disposed: false,
+    acceptPaneRestore: (outcome: unknown) => outcome,
     transportStreamGeneration: 1,
     runtimeEnvironmentId: null,
     deps: {
@@ -50,15 +51,26 @@ function createSession(connect: () => Promise<unknown>) {
       paneTransportsRef: { current: new Map([[1, transport]]) },
       clearTabPtyId: vi.fn()
     },
+    registerEffectiveLaunchConfig: vi.fn(),
     buildColdRestoreAgentResumeStartup: resumeStartup,
     captureTransportOutputCallbacks: () => ({ generation: 1, callbacks: {} }),
     beginReattachLiveDataDeferral: vi.fn(),
     finishReattachLiveDataDeferral: vi.fn(),
     shouldDeclareHiddenAtSpawn: () => false,
     mergeStartupEnvWithPaneIdentity: (env: Record<string, string>) => env,
-    handleReattachResult: vi.fn().mockResolvedValue(true),
+    handleReattachResult: vi.fn().mockResolvedValue({
+      kind: 'connected',
+      ptyId: 'restored-pty',
+      generation: 1,
+      agentResumed: true
+    }),
     clearExitedPanePtyLayoutBinding: vi.fn(),
-    startFreshColdRestoreAgentResume: vi.fn().mockResolvedValue('fresh-pty'),
+    startFreshColdRestoreAgentResume: vi.fn().mockResolvedValue({
+      kind: 'connected',
+      ptyId: 'fresh-pty',
+      generation: 1,
+      agentResumed: true
+    }),
     reportError: vi.fn(),
     cols: 80,
     rows: 24,
@@ -96,7 +108,14 @@ describe('a start that resumes a record marks its pane as resuming in place (lay
     const session = createSession(() => Promise.resolve(null))
     bindDeferredColdRestoreAndSnapshot(session)
     const spawned = deferred<string | null>()
-    session.startFreshSpawn = vi.fn(() => spawned.promise)
+    session.startFreshSpawnOutcome = vi.fn(() =>
+      spawned.promise.then((ptyId) => ({
+        kind: 'connected',
+        ptyId,
+        generation: 1,
+        agentResumed: true
+      }))
+    )
 
     const start = session.spawnColdRestoreAgentResume(resumeStartup())
     expect(isPaneResumingInPlace(RECORD_PANE_KEY)).toBe(true)

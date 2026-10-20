@@ -572,9 +572,11 @@ export function registerPtyConnectionAgentSessionResumeTests(): void {
         expect.stringContaining('--- session restored ---'),
         expect.any(Function)
       )
+      const { pendingSpawnByPaneKey } = await import('./pty-connection/pty-connect-limits')
+      await Promise.all(pendingSpawnByPaneKey.values())
       expect(deps.onShowSessionRestoredBanner).toHaveBeenCalledTimes(1)
       expect(deps.onShowSessionRestoredBanner).toHaveBeenCalledWith(2, 'restored')
-      expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledWith(paneKey)
+      expect(mockStoreState.clearSleepingAgentSession.mock.calls[0]?.[0]).toBe(paneKey)
     })
   })
 }

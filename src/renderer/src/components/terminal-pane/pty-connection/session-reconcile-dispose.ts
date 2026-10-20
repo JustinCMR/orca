@@ -12,6 +12,7 @@ import { SHIFT_ENTER_RECONFIRM_IDLE_MS } from './foreground-output-scan'
 import type { PanePtyBinding } from './pane-pty-binding'
 
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
+import { isHibernatedWakeConnected } from './hibernated-agent-wake-completion'
 import { noteArmsHibernatedPaneWake } from './pty-exit-hibernate'
 
 export function installSessionReconcileDispose(session: ConnectPanePtySession): PanePtyBinding {
@@ -124,12 +125,16 @@ export function installSessionReconcileDispose(session: ConnectPanePtySession): 
       }
       return null
     },
+    isHeldAgentWakeConnected: () => isHibernatedWakeConnected(session),
     retryHeldAgentWake() {
+      if (isHibernatedWakeConnected(session)) {
+        return session.hibernatedWakeCompletion.promise
+      }
       if (!session.hiddenAgentResumeHeldTarget) {
         return null
       }
       session.consumeHibernatedAgentWake()
-      return session.hibernatedWakeCompletion ?? null
+      return session.hibernatedWakeCompletion?.promise ?? null
     },
     sampleForegroundAgentOnFocus() {
       session.requestKnownWindowsShiftEnterReconfirmation()

@@ -1,3 +1,11 @@
+import {
+  selectSleepingRecordForPane,
+  type SleepingRecordConsumption,
+  type SleepingRecordDisposition
+} from '@/lib/sleeping-pane-record-selection'
+import { getProviderSessionClaimKey } from '@/lib/sleeping-agent-pane-ownership'
+import { recordPaneWakeThroughLayoutOwner } from '../terminals/terminal-sleep-layout-owner'
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
 import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { AgentStatusBatchTransaction, AgentStatusBatchUpdate } from './agent-status-contract'
@@ -20,7 +28,10 @@ export type AgentStatusRuntime = {
   transactAgentStatuses: <Result>(
     operation: (transaction: AgentStatusBatchTransaction) => Result
   ) => Result
-  clearSleepingAgentSessionsByPaneKey: (paneKeys: readonly string[]) => void
+  clearSleepingAgentSessionsByPaneKey: (
+    paneKeys: readonly string[],
+    consumption?: SleepingRecordConsumption
+  ) => SleepingRecordDisposition | void
 }
 
 export function createAgentStatusRuntime(
@@ -187,12 +198,37 @@ export function createAgentStatusRuntime(
     }
   })
 
-  const clearSleepingAgentSessionsByPaneKey = (paneKeys: readonly string[]): void => {
+  const clearSleepingAgentSessionsByPaneKey = (
+    paneKeys: readonly string[],
+    consumption?: SleepingRecordConsumption
+  ): SleepingRecordDisposition | void => {
+    let disposition: SleepingRecordDisposition = 'absent'
     if (paneKeys.length === 0) {
       return
     }
     const uniquePaneKeys = new Set(paneKeys)
     set((s) => {
+      if (consumption) {
+        const selected = selectSleepingRecordForPane(s.sleepingAgentSessionsByPaneKey, consumption)
+        if (!selected) {
+          return s
+        }
+        const expected = getProviderSessionClaimKey(consumption.record)
+        if (selected === 'ambiguous' || getProviderSessionClaimKey(selected.record) !== expected) {
+          disposition = 'superseded'
+          return s
+        }
+        disposition = 'accepted'
+        uniquePaneKeys.clear()
+        for (const [key, record] of Object.entries(s.sleepingAgentSessionsByPaneKey)) {
+          if (getProviderSessionClaimKey(record) === expected) {
+            uniquePaneKeys.add(key)
+          }
+        }
+        if (consumption.wake && ORCA_LAYOUT_OWNER_IS_MAIN) {
+          recordPaneWakeThroughLayoutOwner(s, consumption.worktreeId, consumption.paneKey)
+        }
+      }
       let nextSleeping = s.sleepingAgentSessionsByPaneKey
       let nextLaunchConfigs = s.agentLaunchConfigByPaneKey
       for (const paneKey of uniquePaneKeys) {
@@ -220,6 +256,18 @@ export function createAgentStatusRuntime(
         agentLaunchConfigByPaneKey: nextLaunchConfigs
       }
     })
+    if (consumption) {
+      const current = selectSleepingRecordForPane(get().sleepingAgentSessionsByPaneKey, consumption)
+      if (
+        current === 'ambiguous' ||
+        (current &&
+          getProviderSessionClaimKey(current.record) !==
+            getProviderSessionClaimKey(consumption.record))
+      ) {
+        return 'superseded'
+      }
+      return disposition
+    }
   }
 
   return {

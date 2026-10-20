@@ -6,7 +6,6 @@ export type ReattachPayloadSession = Pick<
   | 'applySnapshotKittyKeyboardModes'
   | 'buildColdRestoreAgentResumeStartup'
   | 'chooseReattachReplayReset'
-  | 'clearSleepingRecordAfterColdRestoreSpawn'
   | 'consumeRestoredViewportBlankingMarker'
   | 'createReattachGridPush'
   | 'isPaneOnAlternateScreen'

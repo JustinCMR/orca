@@ -1,5 +1,11 @@
 import { bindPtyConnectionTestMocks } from './pty-connection-mocks.spec'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  projectConnectedTerminalError,
+  appendPaneTerminalError,
+  clearPaneTerminalError
+} from './terminal-error-accumulation'
+import type { PtyConnectResult } from './pty-transport-types'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { createDeferred, flushAsyncTicks } from './pty-connection-test-async'
 import {
@@ -22,6 +28,7 @@ type HiddenPaneBinding = {
   dispose: () => void
   noteVisibilityResume: () => void
   wakeHibernatedAgentIfArmed: (claimed?: Set<string>) => string | null
+  isHeldAgentWakeConnected: () => boolean
   retryHeldAgentWake: () => Promise<boolean> | null
 }
 
@@ -241,7 +248,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
     )
 
     it('keeps an exhausted background hold retryable after a failed explicit wake and fences disposal', async () => {
-      seedSleepingPane(DEAD_SESSION_ID)
+      seedSleepingPane(DEAD_SESSION_ID, { state: 'done', origin: 'worktree-sleep' })
       mockStoreState.activeWorktreeId = 'another-worktree'
       const { isPaneSpawnDeferred } = await import('@/lib/pane-spawn-deferral-registry')
       const remount = vi.fn(() => ({ remounted: false, declinedBy: 'settled-failure' }))
@@ -255,10 +262,7 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
       expect(held.transport.connect.mock.calls[1]?.[0]).not.toHaveProperty('attachOnly')
       held.transport.connect
-        .mockImplementationOnce(async (opts: ResumingConnectOptions) => {
-          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
-          return undefined
-        })
+        .mockResolvedValueOnce({ id: DEAD_SESSION_ID, isReattach: true })
         .mockResolvedValueOnce(undefined)
       await expect(held.binding.retryHeldAgentWake()).resolves.toBe(false)
       expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
@@ -465,34 +469,153 @@ export function registerPtyConnectionHiddenSleepingResumeTests(): void {
       expect(transport.connect).not.toHaveBeenCalled()
     })
 
-    it('keeps holding while a woken reattach falls back to a fresh resume', async () => {
-      seedSleepingPane(DEAD_SESSION_ID)
+    it.each([
+      'success',
+      'record-string',
+      'record-object',
+      'record-null',
+      'record-throw',
+      'record-serializer',
+      'recapture',
+      'after-child'
+    ])('completes empty adoption: %s', async (outcome) => {
+      seedSleepingPane(DEAD_SESSION_ID, { state: 'done', origin: 'worktree-sleep' })
       setHostLiveness(false)
       const { isPaneSpawnDeferred } = await import('@/lib/pane-spawn-deferral-registry')
-      const { transport, binding, isVisibleRef } = connectHiddenPane(DEAD_SESSION_ID)
-      await flushAsyncTicks(10)
-      const fallback = createDeferred<string>()
-      // The reattach comes back with no PTY; the fallback spawn is still starting.
-      transport.connect
-        .mockImplementationOnce(async (opts: ResumingConnectOptions) => {
-          opts.callbacks?.onError?.(`Session not found: ${opts.sessionId}`)
-          return undefined
+      const tab = () => mockStoreState.tabsByWorktree['wt-1'][0]
+      tab().recovery = {
+        generation: 1,
+        outcome: 'pending',
+        attemptedAt: [1],
+        startedAt: Date.now(),
+        reason: 'reattach-unverifiable',
+        tabGeneration: 0
+      }
+      let errors = appendPaneTerminalError({}, 2, 'terminal_reattach_unverifiable')
+      errors = appendPaneTerminalError(errors, 2, 'terminal_pane_owner_unverified')
+      errors = appendPaneTerminalError(errors, 2, 'unrelated')
+      const cleared = vi.fn((id: number, message?: string) => {
+        errors = clearPaneTerminalError(errors, id, message)
+      })
+      const transport = createResumingTransport()
+      transportFactoryQueue.push(transport)
+      const isVisibleRef = { current: false }
+      const binding = connectPane(
+        buildPaneConnectionDeps(() => mockStoreState, {
+          restoredLeafId: LEAF_2,
+          restoredPtyIdByLeafId: { [LEAF_2]: DEAD_SESSION_ID },
+          isVisibleRef,
+          onPtyErrorClearedRef: { current: cleared }
         })
+      )
+      await flushAsyncTicks(10)
+      tab().recovery!.outcome = 'pending'
+      const fallback = createDeferred<string | PtyConnectResult | null>()
+      const serializer = createDeferred<void>()
+
+      // Empty adoption retires before the selected fresh resume starts.
+      transport.connect
+        .mockResolvedValueOnce({ id: DEAD_SESSION_ID, isReattach: true })
         .mockImplementationOnce(() =>
-          fallback.promise.then((ptyId) => {
-            transport.getPtyId.mockReturnValue(ptyId)
-            return ptyId
+          fallback.promise.then((result) => {
+            transport.getPtyId.mockReturnValue(
+              typeof result === 'string' ? result : (result?.id ?? null)
+            )
+            return result
           })
         )
 
+      if (outcome === 'record-serializer') {
+        vi.mocked(window.api.pty.settlePaneSerializer).mockReturnValueOnce(serializer.promise)
+      }
       isVisibleRef.current = true
       binding.noteVisibilityResume()
       await flushAsyncTicks(20)
       expect(transport.connect).toHaveBeenCalledTimes(3)
       expect(isPaneSpawnDeferred(PANE_KEY)).toBe(true)
 
-      fallback.resolve('resumed-pty')
+      const pending = binding.retryHeldAgentWake()
+      expect(pending).not.toBeNull()
+      let completed = false
+      void pending?.then(() => {
+        completed = true
+      })
+      binding.wakeHibernatedAgentIfArmed(new Set())
+      binding.noteVisibilityResume()
       await flushAsyncTicks(10)
+      expect(completed).toBe(false)
+      expect(transport.connect).toHaveBeenCalledTimes(3)
+      const { pendingSpawnByPaneKey } = await import('./pty-connection/pty-connect-limits')
+      const selected = [...pendingSpawnByPaneKey.values()][0]
+      expect(tab().recovery?.outcome).toBe('pending')
+      const recipe = { agentCommand: 'codex', agentArgs: '--model successor', agentEnv: {} }
+      const replace = () => {
+        const record = mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]!
+        mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY] = {
+          ...record,
+          updatedAt: 3,
+          providerSession: { key: 'session_id', id: 'successor-session' }
+        }
+        mockStoreState.agentLaunchConfigByPaneKey[PANE_KEY] = { launchConfig: recipe }
+      }
+      if (outcome.startsWith('record') && outcome !== 'record-serializer') {
+        replace()
+      }
+      if (outcome === 'recapture') {
+        const record = mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]!
+        mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY] = { ...record, updatedAt: 9 }
+      }
+      if (outcome === 'after-child') {
+        const heartbeat = mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]
+        void selected.then(() => {
+          mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY] = { ...heartbeat, updatedAt: 10 }
+        })
+      }
+      if (outcome === 'record-throw') {
+        fallback.reject(new Error('old child failed'))
+      } else {
+        fallback.resolve(
+          outcome === 'record-null'
+            ? null
+            : outcome === 'record-object'
+              ? { id: 'resumed-pty', launchConfig: { ...recipe, agentArgs: '--model old' } }
+              : 'resumed-pty'
+        )
+      }
+      if (outcome === 'record-serializer') {
+        await vi.waitFor(() => expect(window.api.pty.settlePaneSerializer).toHaveBeenCalled())
+        expect(tab().recovery?.outcome).toBe('pending')
+        replace()
+        serializer.resolve()
+      }
+      const failed = outcome === 'record-null' || outcome === 'record-throw'
+      await expect(pending).resolves.toBe(!failed)
+      await expect(selected).resolves.toMatchObject({
+        kind: failed ? 'failed' : outcome.startsWith('record') ? 'superseded' : 'connected'
+      })
+      expect(tab().recovery?.outcome).toBe(
+        failed ? 'failed' : outcome.startsWith('record') ? 'superseded' : 'success'
+      )
+      if (outcome.startsWith('record')) {
+        expect(mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]?.providerSession.id).toBe(
+          'successor-session'
+        )
+        expect(mockStoreState.agentLaunchConfigByPaneKey[PANE_KEY]?.launchConfig).toEqual(recipe)
+        expect(cleared).not.toHaveBeenCalled()
+        const stored = errors[2].join('\n')
+        expect(projectConnectedTerminalError(stored, binding.isHeldAgentWakeConnected())).toBe(
+          failed ? stored : 'unrelated'
+        )
+        if (!failed) {
+          await expect(binding.retryHeldAgentWake()).resolves.toBe(true)
+        }
+        expect(transport.connect).toHaveBeenCalledTimes(3)
+      } else {
+        expect(errors[2]).toEqual(['unrelated'])
+        expect(mockStoreState.sleepingAgentSessionsByPaneKey[PANE_KEY]).toEqual(
+          outcome === 'after-child' ? expect.any(Object) : undefined
+        )
+      }
       expect(isPaneSpawnDeferred(PANE_KEY)).toBe(false)
     })
 

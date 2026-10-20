@@ -2,6 +2,7 @@ import type { IDisposable } from '@xterm/xterm'
 import type { HasPty } from '../terminal-dead-session-reconcile'
 
 export type PanePtyBinding = IDisposable & {
+  isHeldAgentWakeConnected?: () => boolean
   retryHeldAgentWake?: () => Promise<boolean> | null
   syncProcessTracking: () => void
   noteVisibilityResume: () => void

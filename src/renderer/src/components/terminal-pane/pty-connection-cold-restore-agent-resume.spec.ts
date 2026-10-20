@@ -310,7 +310,7 @@ export function registerPtyConnectionColdRestoreAgentResumeTests(): void {
         })
       )
       // Why: consuming the record prevents a later worktree activation from launching a duplicate resume tab.
-      expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledWith(paneKey)
+      expect(mockStoreState.clearSleepingAgentSession.mock.calls[0]?.[0]).toBe(paneKey)
     })
 
     it('marks the pane as freshly started when main declined an unverifiable resume', async () => {
@@ -446,8 +446,8 @@ export function registerPtyConnectionColdRestoreAgentResumeTests(): void {
           command: "codex 'resume' 'codex-session-1'"
         })
       )
-      expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledWith(legacyPaneKey)
-      expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledWith(duplicateLegacyPaneKey)
+      expect(mockStoreState.clearSleepingAgentSession.mock.calls[0]?.[0]).toBe(legacyPaneKey)
+      expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledTimes(1)
       expect(mockStoreState.sleepingAgentSessionsByPaneKey[legacyPaneKey]).toBeUndefined()
       expect(mockStoreState.sleepingAgentSessionsByPaneKey[duplicateLegacyPaneKey]).toBeUndefined()
     })

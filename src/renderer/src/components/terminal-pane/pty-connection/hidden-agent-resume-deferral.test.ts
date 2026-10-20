@@ -14,12 +14,18 @@ import {
 } from './hidden-agent-resume-deferral'
 
 function hiddenPaneSession(): ConnectPanePtySession {
+  const transport = { getPtyId: () => null }
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: deferHiddenAgentResume reads only these session members.
   return {
     disposed: false,
     cacheKey: 'tab-1:leaf-1',
-    deps: { isVisibleRef: { current: false } },
-    transport: { getPtyId: () => null },
+    deps: {
+      isVisibleRef: { current: false },
+      paneTransportsRef: { current: new Map([[1, transport]]) }
+    },
+    pane: { id: 1 },
+    transport,
+    getSleepingRecordForPane: () => startup.sleepingRecordEntry,
     hibernatedWakeTarget: null,
     hibernatedWakeInFlightClaimKey: null,
     wakeHibernatedAgentPane: () => Promise.resolve('pty-1')
@@ -28,7 +34,14 @@ function hiddenPaneSession(): ConnectPanePtySession {
 
 // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: deferHiddenAgentResume reads only the record entry.
 const startup = {
-  sleepingRecordEntry: { paneKey: 'tab-1:leaf-1', record: { paneKey: 'tab-1:leaf-1' } }
+  sleepingRecordEntry: {
+    paneKey: 'tab-1:leaf-1',
+    record: {
+      paneKey: 'tab-1:leaf-1',
+      agent: 'codex',
+      providerSession: { key: 'session_id', id: 'session-1' }
+    }
+  }
 } as unknown as ColdRestoreAgentResumeStartup
 
 describe('deferHiddenAgentResume', () => {
@@ -49,7 +62,10 @@ describe('deferHiddenAgentResume', () => {
     const session = hiddenPaneSession()
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: deferHiddenAgentResume reads only the record entry.
     const legacyStartup = {
-      sleepingRecordEntry: { paneKey: 'tab-1:2', record: { paneKey: 'tab-1:2' } }
+      sleepingRecordEntry: {
+        paneKey: 'tab-1:2',
+        record: { ...startup.sleepingRecordEntry!.record, paneKey: 'tab-1:2' }
+      }
     } as unknown as ColdRestoreAgentResumeStartup
 
     expect(deferHiddenAgentResume(session, legacyStartup)).toBe(true)

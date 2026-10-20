@@ -1,16 +1,18 @@
-import { useAppStore } from '@/store'
 import type { PtyReplayDataMeta } from '../pty-transport-types'
 import { INITIAL_MODE_2031_REPLY_SCAN_STATE } from '../../../../../shared/terminal-color-scheme-protocol'
 import { waitForTerminalOutputParsed } from '@/lib/pane-manager/pane-terminal-output-scheduler'
 import { executeTerminalStartupCommandPaste } from '../terminal-startup-command-paste'
 import { resolveTerminalPasteRuntime } from '../terminal-paste-runtime'
 import { CLIENT_PLATFORM } from '@/lib/new-workspace'
-import { recordPaneWakeThroughLayoutOwner } from '@/store/terminals/terminal-sleep-layout-owner'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../../shared/layout-owner-switch'
 
 import { shouldKeepHiddenStartupRendererQueriesLive } from './hidden-startup-renderer-query'
 import { createForegroundImmediateBudget } from './foreground-output-budgets'
-import type { FreshSpawnOptions, ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
+import type {
+  FreshSpawnOptions,
+  ColdRestoreAgentResumeStartup,
+  PaneRestoreOutcome
+} from './fresh-spawn-types'
 
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 import { bindCaptureTransportOutputCallbacks } from './transport-output-callbacks'
@@ -29,33 +31,15 @@ export function bindDeferredColdRestoreAndSnapshot(session: ConnectPanePtySessio
     if (!startup) {
       return false
     }
-    const state = useAppStore.getState()
-    state.registerAgentLaunchConfig(session.cacheKey, startup.launchConfig, {
-      agentType: startup.agent,
-      launchToken: startup.launchToken,
-      tabId: session.deps.tabId,
-      leafId: session.pane.leafId
-    })
+    session.registerEffectiveLaunchConfig(
+      startup.launchConfig,
+      {
+        launchAgent: startup.agent,
+        launchToken: startup.launchToken
+      },
+      startup
+    )
     return true
-  }
-  session.clearSleepingRecordAfterColdRestoreSpawn = (
-    startup: ColdRestoreAgentResumeStartup | null
-  ): void => {
-    if (startup && !startup.useLiveEntry && startup.sleepingRecordEntry) {
-      // Switch point: main records the wake of this pane alone, the one this window resumed.
-      // Before the drop below, whose record-only wake would leave main's wake nothing to wake.
-      if (ORCA_LAYOUT_OWNER_IS_MAIN) {
-        recordPaneWakeThroughLayoutOwner(
-          useAppStore.getState(),
-          session.deps.worktreeId,
-          session.cacheKey
-        )
-      }
-      session.clearSleepingRecordProviderDuplicates(
-        useAppStore.getState(),
-        startup.sleepingRecordEntry
-      )
-    }
   }
   session.mergeStartupEnvWithPaneIdentity = (
     env: Record<string, string> | undefined
@@ -73,9 +57,9 @@ export function bindDeferredColdRestoreAndSnapshot(session: ConnectPanePtySessio
   session.spawnColdRestoreAgentResume = (
     startup: ColdRestoreAgentResumeStartup | null = session.buildColdRestoreAgentResumeStartup(),
     options: FreshSpawnOptions = {}
-  ): Promise<string | null> => {
+  ): Promise<PaneRestoreOutcome> => {
     session.applyColdRestoreAgentResumeStartup(startup)
-    const spawned = session.startFreshSpawn(startup, options)
+    const spawned = session.startFreshSpawnOutcome(startup, options)
     // Switch point: main's layout shows this pane unbound while the start runs.
     if (ORCA_LAYOUT_OWNER_IS_MAIN) {
       holdInPlaceResumeUntilSettled(() => !session.disposed, startup, spawned)
@@ -85,9 +69,9 @@ export function bindDeferredColdRestoreAndSnapshot(session: ConnectPanePtySessio
   session.startFreshColdRestoreAgentResume = (
     startup: ColdRestoreAgentResumeStartup | null = session.buildColdRestoreAgentResumeStartup(),
     options: FreshSpawnOptions = {}
-  ): Promise<string | null> =>
+  ): Promise<PaneRestoreOutcome> =>
     deferHiddenAgentResume(session, startup)
-      ? Promise.resolve(null)
+      ? Promise.resolve({ kind: 'held', generation: session.transportStreamGeneration })
       : session.spawnColdRestoreAgentResume(startup, options)
   // Why: the hibernation wake fires from noteVisibilityResume in the outer
   // connection scope, long after this deferred-connect closure has run.

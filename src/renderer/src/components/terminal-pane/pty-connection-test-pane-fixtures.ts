@@ -40,6 +40,7 @@ export type MockTransport = {
   claimViewport: ReturnType<typeof vi.fn>
   setOutputPaused?: ReturnType<typeof vi.fn>
   resize: ReturnType<typeof vi.fn>
+  isConnected: () => boolean
   getPtyId: ReturnType<typeof vi.fn>
   getConnectionId: ReturnType<typeof vi.fn>
   serializeBuffer?: ReturnType<typeof vi.fn>
@@ -67,6 +68,7 @@ export function createMockTransport(initialPtyId: string | null = null): MockTra
     resize: vi.fn(() => true),
     getPtyId: vi.fn(() => ptyId),
     getConnectionId: vi.fn(() => null),
+    isConnected: () => transport.getPtyId() !== null,
     serializeBuffer: undefined
   } as MockTransport
   const sendInput = transport.sendInput as unknown as (data: string) => boolean

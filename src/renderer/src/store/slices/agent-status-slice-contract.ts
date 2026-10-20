@@ -28,6 +28,10 @@ import type {
   SleepingAgentLaunchConfig,
   SleepingAgentSessionRecord
 } from '../../../../shared/agent-session-resume'
+import type {
+  SleepingRecordConsumption,
+  SleepingRecordDisposition
+} from '@/lib/sleeping-pane-record-selection'
 import type { ProgramStatusFacet } from '../../../../shared/program-status/facet'
 
 export type AgentStatusSlice = {
@@ -156,7 +160,10 @@ export type AgentStatusSlice = {
   captureSleepingAgentSessionsByWorktree: (worktreeId: string, paneKeys?: string[]) => void
   /** Capture resumable agent sessions across every worktree for crash recovery or quit; mode sets live/quit precedence. */
   captureAllSleepingAgentSessions: (mode: AllAgentSessionCaptureMode) => void
-  clearSleepingAgentSession: (paneKey: string) => void
+  clearSleepingAgentSession: (
+    paneKey: string,
+    consumption?: SleepingRecordConsumption
+  ) => SleepingRecordDisposition | void
   /** Keeps a resume handle for a pane whose restore the host deferred; never replaces a record. */
   rememberSleepingAgentSession: (record: SleepingAgentSessionRecord) => void
   clearSleepingAgentSessionsByPaneKey: (paneKeys: readonly string[]) => void

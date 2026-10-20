@@ -1,10 +1,17 @@
 import { vi } from 'vitest'
+import {
+  createAgentStatusRuntime,
+  type AgentStatusStateUpdate
+} from '@/store/slices/agent-status-runtime'
+import { createAgentStatusLaunchActions } from '@/store/slices/agent-status-launch-actions'
+import { createSettleTerminalTabRecovery } from '@/store/slices/worktrees/session/worktree-slice-lookups'
+import type { AppState } from '@/store/types'
 import type { PaneForegroundAgentEntry } from '@/store/slices/pane-foreground-agent'
 import { LEAF_1 } from './pty-connection-test-pane-fixtures'
 import type { StoreState } from './pty-connection-test-store-state'
 
 export function createInitialStoreState(getState: () => StoreState): StoreState {
-  return {
+  const state = {
     activeWorktreeId: 'wt-1',
     tabsByWorktree: {
       'wt-1': [{ id: 'tab-1', ptyId: 'tab-pty' }]
@@ -93,6 +100,20 @@ export function createInitialStoreState(getState: () => StoreState): StoreState 
     markTerminalBell: vi.fn(),
     markAgentAttentionUnread: vi.fn()
   } as StoreState
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this harness supplies the fields read by the real record/config actions; unrelated slices are not exercised.
+  const get = () => getState() as unknown as AppState
+  const set = (update: AgentStatusStateUpdate): void => {
+    Object.assign(get(), typeof update === 'function' ? update(get()) : update)
+  }
+  const runtime = createAgentStatusRuntime(set, get, get)
+  Object.assign(state, { settleTerminalTabRecovery: createSettleTerminalTabRecovery(set, get) })
+  state.clearSleepingAgentSession = vi.fn((paneKey, consumption) =>
+    runtime.clearSleepingAgentSessionsByPaneKey([paneKey], consumption)
+  )
+  const launch = createAgentStatusLaunchActions(runtime)
+  state.registerAgentLaunchConfig = vi.fn(launch.registerAgentLaunchConfig)
+  state.clearAgentLaunchConfig = vi.fn(launch.clearAgentLaunchConfig)
+  return state
 }
 
 export function buildReattachPaneTitleState(current: StoreState, title: string): StoreState {

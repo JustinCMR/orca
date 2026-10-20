@@ -301,7 +301,8 @@ export function registerPtyConnectionCommandFinishedCleanupTests(): void {
           agent: 'codex'
         })
       } else {
-        expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledExactlyOnceWith(paneKey)
+        expect(mockStoreState.clearSleepingAgentSession).toHaveBeenCalledTimes(1)
+        expect(mockStoreState.clearSleepingAgentSession.mock.calls[0]?.[0]).toBe(paneKey)
         expect(mockStoreState.sleepingAgentSessionsByPaneKey[paneKey]).toBeUndefined()
       }
       expect(mockStoreState.paneForegroundAgentByPaneKey[paneKey]).toEqual({

@@ -9,8 +9,9 @@ import {
   seedStore
 } from '../store/slices/store-test-helpers'
 import { createStoreCascadesMockApi } from '../store/slices/store-cascades-test-harness'
-import { recordPaneWakeThroughLayoutOwner } from '../store/terminals/terminal-sleep-layout-owner'
 import { followSleepingRecordsInLayoutOwner } from './sleeping-records-to-layout-owner'
+
+vi.mock('../../../shared/layout-owner-switch', () => ({ ORCA_LAYOUT_OWNER_IS_MAIN: true }))
 
 const mocks = vi.hoisted(() => ({
   callRuntimeRpc: vi.fn(
@@ -140,12 +141,70 @@ describe('main’s copy of the window’s resume records', () => {
     setRecords({ [PANE]: record(PANE, LOCAL) })
     mocks.callRuntimeRpc.mockClear()
 
-    recordPaneWakeThroughLayoutOwner(held.store!.getState(), LOCAL, PANE)
-    held.store!.getState().clearSleepingAgentSession(PANE)
+    held.store!.getState().clearSleepingAgentSession(PANE, {
+      paneKey: PANE,
+      tabId: TAB,
+      paneId: 1,
+      worktreeId: LOCAL,
+      record: record(PANE, LOCAL),
+      wake: true
+    })
 
     expect(sent()).toEqual([
       { type: 'wake', workspace: LOCAL, tabId: TAB, paneKeys: [PANE] },
       { type: 'wake', workspace: LOCAL, tabId: TAB, paneKeys: [PANE], recordOnly: true }
     ])
   })
+
+  it.each(['codex', 'pi'] as const)(
+    'selects current %s identity and removes aliases before subscriber recapture',
+    (agent) => {
+      const store = held.store!
+      const old = { ...record(PANE, LOCAL), agent }
+      const alias = `${TAB}:1`
+      const other = {
+        ...old,
+        providerSession: {
+          ...old.providerSession,
+          id: agent === 'codex' ? 'successor' : old.providerSession.id,
+          transcriptPath: '/new-transcript'
+        }
+      }
+      const expected = {
+        paneKey: PANE,
+        tabId: TAB,
+        paneId: 1,
+        worktreeId: LOCAL,
+        record: old,
+        wake: true as const
+      }
+      setRecords({ [PANE]: other, [alias]: { ...old, paneKey: alias } })
+      mocks.callRuntimeRpc.mockClear()
+      expect(store.getState().clearSleepingAgentSession(alias, expected)).toBe('superseded')
+      expect(mocks.callRuntimeRpc).not.toHaveBeenCalled()
+      setRecords({ [PANE]: { ...old, updatedAt: 9 }, [alias]: { ...old, paneKey: alias } })
+      const recipe = { agentCommand: 'codex', agentArgs: '', agentEnv: {} }
+      store.getState().registerAgentLaunchConfig(PANE, recipe)
+      store.getState().registerAgentLaunchConfig(alias, recipe)
+      const seen: number[] = []
+      const unsubscribe = store.subscribe((state, previous) => {
+        if (state.sleepingAgentSessionsByPaneKey === previous.sleepingAgentSessionsByPaneKey) {
+          return
+        }
+        if (!state.sleepingAgentSessionsByPaneKey[PANE]) {
+          seen.push(
+            Object.keys(state.agentLaunchConfigByPaneKey).filter(
+              (key) => key === PANE || key === alias
+            ).length
+          )
+          store.setState({ sleepingAgentSessionsByPaneKey: { [PANE]: other } })
+        }
+      })
+      expect(store.getState().clearSleepingAgentSession(alias, expected)).toBe('superseded')
+      unsubscribe()
+      expect(seen).toEqual([0])
+      expect(store.getState().sleepingAgentSessionsByPaneKey[PANE]).toBe(other)
+      expect(store.getState().sleepingAgentSessionsByPaneKey[alias]).toBeUndefined()
+    }
+  )
 })

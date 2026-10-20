@@ -23,3 +23,21 @@ export type ColdRestoreAgentResumeStartup = PendingStartupCommand & {
   hasSleepingRecord: boolean
   sleepingRecordEntry: { paneKey: string; record: SleepingAgentSessionRecord } | null
 }
+
+export type PaneRestoreOutcome =
+  | {
+      kind: 'connected'
+      ptyId: string
+      generation: number
+      agentResumed: boolean
+      recordAcceptance?: 'accepted' | 'absent'
+    }
+  | { kind: 'superseded'; generation: number; ptyId?: string }
+  | { kind: 'failed' | 'held' | 'ended'; generation: number }
+
+export type ReattachResultDecision =
+  | (PaneRestoreOutcome & {
+      preparedStartup?: ColdRestoreAgentResumeStartup | null
+      resumeUnavailable?: boolean
+    })
+  | { kind: 'continue-fresh' }

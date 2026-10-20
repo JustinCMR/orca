@@ -37,6 +37,7 @@ function createSession(opts: { runtimeEnvironmentId?: string } = {}) {
     pane: { id: 1, leafId: 'leaf', terminal: { options: { disableStdin: false } } },
     transport,
     disposed: false,
+    acceptPaneRestore: (outcome: unknown) => outcome,
     transportStreamGeneration: 1,
     runtimeEnvironmentId: opts.runtimeEnvironmentId ?? null,
     waitTeardowns: new Array<() => void>(),
@@ -57,9 +58,19 @@ function createSession(opts: { runtimeEnvironmentId?: string } = {}) {
     finishReattachLiveDataDeferral: vi.fn(),
     shouldDeclareHiddenAtSpawn: () => false,
     mergeStartupEnvWithPaneIdentity: (env: Record<string, string>) => env,
-    handleReattachResult: vi.fn().mockResolvedValue(true),
+    handleReattachResult: vi.fn().mockResolvedValue({
+      kind: 'connected',
+      ptyId: 'restored-pty',
+      generation: 1,
+      agentResumed: true
+    }),
     clearExitedPanePtyLayoutBinding: vi.fn(),
-    startFreshColdRestoreAgentResume: vi.fn().mockResolvedValue('fresh-pty'),
+    startFreshColdRestoreAgentResume: vi.fn().mockResolvedValue({
+      kind: 'connected',
+      ptyId: 'fresh-pty',
+      generation: 1,
+      agentResumed: true
+    }),
     reportError: vi.fn(),
     cols: 80,
     rows: 24,

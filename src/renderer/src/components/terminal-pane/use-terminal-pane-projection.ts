@@ -9,7 +9,11 @@ import {
 } from '@/lib/terminal-theme'
 import { stripSshReconnectOwnedErrorLines } from './TerminalErrorToast'
 import { agentLaunchPaneOutcomeForLeaf } from './agent-launch-pane-notice-text'
-import { mapPaneTerminalErrors, terminalErrorForPane } from './terminal-error-accumulation'
+import {
+  mapPaneTerminalErrors,
+  terminalErrorForPane,
+  projectConnectedTerminalError
+} from './terminal-error-accumulation'
 import {
   nativeChatLaunchAgentForLeaf,
   nativeChatLeafOwnsTabWideEvidence,
@@ -102,10 +106,12 @@ export function useTerminalPaneProjection(controller: TerminalPaneMobileControll
     )
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Preserve the pre-split dependency contract.
   }, [sshReconnectOwnsTerminalErrors])
-  const visibleTerminalError = terminalErrorForPane(
-    terminalError,
-    terminalErrorsByPaneId,
-    activePane?.id ?? null
+  const visibleTerminalError = projectConnectedTerminalError(
+    terminalErrorForPane(terminalError, terminalErrorsByPaneId, activePane?.id ?? null),
+    activePane
+      ? controller.panePtyBindingsRef.current.get(activePane.id)?.isHeldAgentWakeConnected?.() ===
+          true
+      : false
   )
   const visibleLaunchRefusal = agentLaunchPaneOutcomeForLeaf(terminalTab, activePane?.leafId)
   const menuPaneHasCustomTitle =

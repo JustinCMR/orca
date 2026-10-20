@@ -1,6 +1,6 @@
 import type { vi } from 'vitest'
 import type { AgentType } from '../../../../shared/agent-status-types'
-import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
+import type { TerminalTab, TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
 import { resolveWindowsShiftEnterEncodingForPane } from './terminal-windows-shift-enter'
 import type { PaneForegroundAgentEntry } from '@/store/slices/pane-foreground-agent'
 
@@ -16,6 +16,7 @@ export type StoreState = {
       shellOverride?: string
       forceHostRuntime?: boolean
       generation?: number
+      recovery?: TerminalTab['recovery']
     }[]
   >
   ptyIdsByTabId?: Record<string, string[]>

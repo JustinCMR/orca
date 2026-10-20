@@ -3,7 +3,7 @@ import { warnTerminalLifecycleAnomaly } from '../terminal-lifecycle-diagnostics'
 import { isSshSessionGoneError, recordPtyConnectDiagnostic } from './pty-connect-limits'
 import { toProcessExitStartup } from './process-exit-startup'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
-import type { HeldPaneReopenOutcome } from '../newer-daemon-hold-state'
+import type { PaneRestoreOutcome, ReattachResultDecision } from './fresh-spawn-types'
 import { holdForNewerDaemon } from './newer-daemon-hold-pane'
 import { NEWER_DAEMON_HOLD_ERROR } from '../../../../../shared/newer-daemon-hold'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../../shared/layout-owner-switch'
@@ -15,20 +15,23 @@ import {
 } from '@/hooks/ipc-events/agent-status-startup-snapshot'
 
 const PANE_OWNER_UNVERIFIED_ERROR = 'terminal_pane_owner_unverified'
-type ReattachOutcome = HeldPaneReopenOutcome & { generation?: number }
 
 /** With `onNotAttached`, the reattach may only adopt a live session; any other outcome calls it instead. */
 export function startDeferredSessionReattach(
   session: ConnectPanePtySession,
   deferredReattachSessionId: string,
-  onNotAttached?: (unverifiable: boolean) => Promise<ReattachOutcome> | void
-): Promise<ReattachOutcome> {
+  onNotAttached?: (unverifiable: boolean) => Promise<PaneRestoreOutcome>
+): Promise<PaneRestoreOutcome> {
+  const generation = session.transportStreamGeneration
   return prepareDeferredSessionReattach(session, deferredReattachSessionId, onNotAttached).catch(
     (error: unknown) => {
       if (!session.disposed) {
         session.reportError(error instanceof Error ? error.message : String(error))
       }
-      return NOT_REOPENED
+      return {
+        kind: generation === session.transportStreamGeneration ? 'failed' : 'superseded',
+        generation
+      }
     }
   )
 }
@@ -36,8 +39,8 @@ export function startDeferredSessionReattach(
 async function prepareDeferredSessionReattach(
   session: ConnectPanePtySession,
   deferredReattachSessionId: string,
-  onNotAttached?: (unverifiable: boolean) => Promise<ReattachOutcome> | void
-): Promise<ReattachOutcome> {
+  onNotAttached?: (unverifiable: boolean) => Promise<PaneRestoreOutcome>
+): Promise<PaneRestoreOutcome> {
   const generation = session.transportStreamGeneration
   let waitedForSnapshot = false
   if (
@@ -54,19 +57,17 @@ async function prepareDeferredSessionReattach(
     (waitedForSnapshot &&
       session.deps.paneTransportsRef.current.get(session.pane.id) !== session.transport)
   ) {
-    return NOT_REOPENED
+    return { kind: 'superseded', generation }
   }
   return connectDeferredSessionReattach(session, deferredReattachSessionId, onNotAttached)
 }
-
-const NOT_REOPENED: HeldPaneReopenOutcome = { reopened: false, agentResumed: false }
 
 /** Resolves to what the reattach did, which a held pane's release reports. */
 function connectDeferredSessionReattach(
   session: ConnectPanePtySession,
   deferredReattachSessionId: string,
-  onNotAttached?: (unverifiable: boolean) => Promise<ReattachOutcome> | void
-): Promise<ReattachOutcome> {
+  onNotAttached?: (unverifiable: boolean) => Promise<PaneRestoreOutcome>
+): Promise<PaneRestoreOutcome> {
   session.allowInitialIdleCacheSeed = true
   recordPtyConnectDiagnostic(`pane=${session.pane.id} -> REATTACH ${deferredReattachSessionId}`)
 
@@ -132,20 +133,10 @@ function connectDeferredSessionReattach(
     !session.disposed &&
     session.deps.paneTransportsRef.current.get(session.pane.id) === session.transport &&
     outputCallbacks.generation === session.transportStreamGeneration
-  const startFreshInstead = (): Promise<ReattachOutcome> => {
-    const started = session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
+  const startFreshInstead = (): Promise<PaneRestoreOutcome> =>
+    session.startFreshColdRestoreAgentResume(coldRestoreStartup, {
       forceBlankRestoredViewport: true
     })
-    const generation = session.transportStreamGeneration
-    return started.then(
-      (ptyId: string | null) => ({
-        reopened: ptyId !== null,
-        agentResumed: ptyId !== null && Boolean(coldRestoreStartup),
-        generation
-      }),
-      () => ({ ...NOT_REOPENED, generation })
-    )
-  }
 
   void Promise.resolve(reattachPromise)
     .catch(() => null)
@@ -160,33 +151,37 @@ function connectDeferredSessionReattach(
     }
     return isCurrentReattach()
   }
-  const failUnverifiable = (): ReattachOutcome => {
+  const failUnverifiable = (): PaneRestoreOutcome => {
     session.settlePaneAttachAttempt('failed')
     if (session.deps.isVisibleRef.current || isHeldWake) {
       session.reportError(
         paneOwnerUnverified ? PANE_OWNER_UNVERIFIED_ERROR : 'terminal_reattach_unverifiable'
       )
     }
-    return { ...NOT_REOPENED, generation: outputCallbacks.generation }
+    return { kind: 'failed', generation: outputCallbacks.generation }
   }
   const outcome = Promise.resolve(reattachPromise)
-    .then(async (result): Promise<ReattachOutcome> => {
+    .then(async (result): Promise<PaneRestoreOutcome> => {
       if (!isCurrentReattach()) {
         await finishFailedReattach()
-        return NOT_REOPENED
+        return { kind: 'superseded', generation: outputCallbacks.generation }
       }
       if (!result) {
         if (!(await finishFailedReattach())) {
-          return NOT_REOPENED
+          return { kind: 'superseded', generation: outputCallbacks.generation }
         }
         if (heldByNewerDaemon) {
-          holdForNewerDaemon(session, deferredReattachSessionId, () =>
-            connectDeferredSessionReattach(session, deferredReattachSessionId)
-          )
-          return NOT_REOPENED
+          holdForNewerDaemon(session, deferredReattachSessionId, async () => {
+            const result = await connectDeferredSessionReattach(session, deferredReattachSessionId)
+            return {
+              reopened: result.kind === 'connected',
+              agentResumed: result.kind === 'connected' && result.agentResumed
+            }
+          })
+          return { kind: 'held', generation: outputCallbacks.generation }
         }
         if (onNotAttached) {
-          return (await onNotAttached(!sessionNotFound)) ?? NOT_REOPENED
+          return onNotAttached(!sessionNotFound)
         }
         if (paneOwnerUnverified || (isHeldWake && !sessionNotFound)) {
           return failUnverifiable()
@@ -200,13 +195,17 @@ function connectDeferredSessionReattach(
         session.deps.clearTabPtyId(session.deps.tabId, deferredReattachSessionId)
         return startFreshInstead()
       }
-      const accepted = await session.handleReattachResult(
+      const decision: ReattachResultDecision = await session.handleReattachResult(
         result,
         deferredReattachSessionId,
         coldRestoreStartup,
         outputCallbacks.generation
       )
-      session.finishReattachLiveDataDeferral(accepted, outputCallbacks.generation)
+      const accepted = decision.kind === 'connected'
+      session.finishReattachLiveDataDeferral(
+        accepted || decision.kind === 'ended',
+        outputCallbacks.generation
+      )
       const gen = await preSignalPromise
       if (typeof gen === 'number') {
         if (!accepted) {
@@ -225,24 +224,36 @@ function connectDeferredSessionReattach(
             : window.api.pty.settlePaneSerializer(session.cacheKey, gen))
         }
       }
-      return {
-        reopened: accepted,
-        generation: outputCallbacks.generation,
-        agentResumed:
-          accepted &&
-          Boolean(coldRestoreStartup) &&
-          !(result && typeof result === 'object' && result.agentResumeUnavailable)
+      if (!isCurrentReattach()) {
+        return { kind: 'superseded', generation: outputCallbacks.generation }
       }
+      if (decision.kind === 'continue-fresh') {
+        return startFreshInstead()
+      }
+      const final =
+        decision.kind === 'connected'
+          ? session.acceptPaneRestore(
+              decision,
+              decision.preparedStartup,
+              decision.resumeUnavailable
+            )
+          : decision
+      if (final.kind === 'connected' && final.recordAcceptance !== 'absent') {
+        session.settlePaneAttachAttempt?.('success')
+      } else if (final.kind === 'failed' || final.kind === 'superseded') {
+        session.settlePaneAttachAttempt?.(final.kind)
+      }
+      return final
     })
-    .catch(async (err): Promise<ReattachOutcome> => {
+    .catch(async (err): Promise<PaneRestoreOutcome> => {
       if (!(await finishFailedReattach())) {
-        return NOT_REOPENED
+        return { kind: 'superseded', generation: outputCallbacks.generation }
       }
       const message = err instanceof Error ? err.message : String(err)
       sessionNotFound = message.endsWith(`Session not found: ${deferredReattachSessionId}`)
       paneOwnerUnverified = message.includes(PANE_OWNER_UNVERIFIED_ERROR)
       if (onNotAttached) {
-        return (await onNotAttached(!sessionNotFound)) ?? NOT_REOPENED
+        return onNotAttached(!sessionNotFound)
       }
       if (paneOwnerUnverified || isHeldWake) {
         return failUnverifiable()

@@ -125,3 +125,19 @@ export function appendTerminalErrorMessage(accumulated: string | null, message: 
     ? accumulated
     : boundTerminalErrorSurface(`${accumulated}\n${message}`)
 }
+
+/** A complete bound connection can supersede reconnect copy without dismissing stored errors. */
+export function projectConnectedTerminalError(
+  error: string | null,
+  connected: boolean
+): string | null {
+  return connected && error
+    ? error
+        .split('\n')
+        .filter(
+          (line) =>
+            line !== 'terminal_reattach_unverifiable' && line !== 'terminal_pane_owner_unverified'
+        )
+        .join('\n') || null
+    : error
+}

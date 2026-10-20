@@ -1,7 +1,7 @@
 import { e2eConfig } from '@/lib/e2e-config'
+import type { PaneRestoreOutcome } from './fresh-spawn-types'
 
-export const pendingSpawnByPaneKey = new Map<string, Promise<string | null>>()
-export const pendingSpawnGenerationByPaneKey = new Map<string, number>()
+export const pendingSpawnByPaneKey = new Map<string, Promise<PaneRestoreOutcome>>()
 export const SSH_SESSION_EXPIRED_ERROR = 'SSH_SESSION_EXPIRED'
 const SSH_PTY_IDENTITY_MISMATCH_ERROR = 'SSH_PTY_IDENTITY_MISMATCH'
 

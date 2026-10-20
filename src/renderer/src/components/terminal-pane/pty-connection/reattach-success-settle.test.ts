@@ -1,23 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { startDeferredSessionReattach } from './deferred-session-reattach-connect'
+import type { PtyConnectResult } from '../pty-transport-types'
 import { bindHandleReattachResult } from './reattach-result-handler'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
-/**
- * `handleReattachResult` holds the only `success` settle in the recovery state
- * machine. Without it every attempt stays `pending` until the 31s settlement
- * bound ages out, so the entire "observed success" half of the gate — the thing
- * that distinguishes this design from the counting budget it replaces — can be
- * deleted with no other test noticing.
- *
- * Placement is load-bearing too. Settling at the `authoritativeReattachGeneration`
- * bump instead would mark a failure path (`reattach returned no PTY id`) as a
- * success and reopen the loop, so the negative cases below are as important as
- * the positive one.
- */
 const mocks = vi.hoisted(() => ({
-  state: { tabsByWorktree: {}, terminalLayoutsByTabId: {} }
+  state: { tabsByWorktree: {}, terminalLayoutsByTabId: {} },
+  apply: vi.fn(async () => {})
 }))
 
+vi.mock('./apply-reattach-payload', () => ({
+  createReattachPayloadHandlers: () => ({
+    applyReattachPayload: mocks.apply,
+    fitAfterReattachRestore: async () => {}
+  })
+}))
 vi.mock('@/store', () => ({
   useAppStore: { getState: () => mocks.state }
 }))
@@ -32,6 +29,7 @@ function buildSession(overrides: Record<string, unknown> = {}): {
 } {
   const settlePaneAttachAttempt = vi.fn()
   const transport = {
+    connect: vi.fn(),
     getPtyId: () => 'pty-1',
     disconnect: vi.fn(),
     serializeBuffer: vi.fn()
@@ -40,6 +38,13 @@ function buildSession(overrides: Record<string, unknown> = {}): {
     settlePaneAttachAttempt,
     transport,
     disposed: false,
+    runtimeEnvironmentId: 'test-runtime',
+    buildColdRestoreAgentResumeStartup: () => null,
+    captureTransportOutputCallbacks: () => ({ generation: 0, callbacks: {} }),
+    beginReattachLiveDataDeferral: vi.fn(),
+    finishReattachLiveDataDeferral: vi.fn(),
+    shouldDeclareHiddenAtSpawn: () => false,
+    acceptPaneRestore: (outcome: unknown) => outcome,
     transportStreamGeneration: 0,
     authoritativeReattachGeneration: 0,
     pane: { id: 'pane-1', leafId: 'leaf-1', terminal: {} },
@@ -55,7 +60,11 @@ function buildSession(overrides: Record<string, unknown> = {}): {
     registerEffectiveLaunchConfig: vi.fn(),
     clearExitedPanePtyLayoutBinding: vi.fn(),
     syncPanePtyLayoutBinding: vi.fn(),
-    startFreshColdRestoreAgentResume: vi.fn(),
+    startFreshColdRestoreAgentResume: vi.fn().mockResolvedValue({ kind: 'failed', generation: 0 }),
+    agentCompletionCoordinator: { startProcessTracking: vi.fn() },
+    sampleVisiblePaneForegroundAgent: vi.fn(),
+    registerPaneSerializerFor: vi.fn(),
+    scheduleReattachIdleAgentCursorReset: vi.fn(),
     setPanePtyFitBinding: vi.fn(),
     reportPanePtyVisibility: vi.fn(),
     registerSideEffectFactConsumerForPty: vi.fn(),
@@ -73,21 +82,13 @@ function setPaneTransports(session: ConnectPanePtySession, transports: Map<strin
   }
 }
 
-/**
- * Only the settle is under assertion here; everything downstream of it has its
- * own tests and needs a far larger session bag than this. A throw BEFORE the
- * settle still fails the test, which is the regression this pins.
- */
 async function driveReattach(
   session: ConnectPanePtySession,
-  result: unknown,
-  staleSessionId?: string | null
+  result: PtyConnectResult | undefined,
+  staleSessionId = 'pty-old'
 ): Promise<void> {
-  try {
-    await session.handleReattachResult(result, staleSessionId)
-  } catch {
-    // See above.
-  }
+  vi.mocked(session.transport.connect).mockResolvedValue(result)
+  await startDeferredSessionReattach(session, staleSessionId)
 }
 
 beforeEach(() => {
@@ -95,12 +96,21 @@ beforeEach(() => {
   mocks.state = { tabsByWorktree: {}, terminalLayoutsByTabId: {} }
 })
 
-describe('handleReattachResult recovery settle', () => {
-  it('reports success once the attach payload is authoritative', async () => {
+describe('selected reattach operation recovery settle', () => {
+  it('reports success only after the selected payload finishes', async () => {
     const { session, settlePaneAttachAttempt } = buildSession()
 
-    await driveReattach(session, { id: 'pty-1', isReattach: true })
-
+    let finish = () => {}
+    mocks.apply.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve
+      })
+    )
+    const operation = driveReattach(session, { id: 'pty-1', isReattach: true })
+    await vi.waitFor(() => expect(mocks.apply).toHaveBeenCalled())
+    expect(settlePaneAttachAttempt).not.toHaveBeenCalled()
+    finish()
+    await operation
     expect(settlePaneAttachAttempt).toHaveBeenCalledWith('success')
   })
 
@@ -109,6 +119,7 @@ describe('handleReattachResult recovery settle', () => {
     // to replace, and the chain would restart.
     const { session, settlePaneAttachAttempt } = buildSession({
       transport: {
+        connect: vi.fn(),
         getPtyId: () => null,
         disconnect: vi.fn(),
         serializeBuffer: vi.fn()
@@ -116,7 +127,7 @@ describe('handleReattachResult recovery settle', () => {
     })
     setPaneTransports(session, new Map([['pane-1', session.transport]]))
 
-    await driveReattach(session, undefined, null)
+    await driveReattach(session, undefined)
 
     expect(settlePaneAttachAttempt).not.toHaveBeenCalledWith('success')
     expect(session.startFreshColdRestoreAgentResume).toHaveBeenCalledOnce()

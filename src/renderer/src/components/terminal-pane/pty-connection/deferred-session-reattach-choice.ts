@@ -4,11 +4,7 @@ import { useAppStore } from '@/store'
 import { isWebTerminalSurfaceTabId } from '../../../../../shared/terminal-surface-id'
 import { getEagerPtyBufferHandle } from '../pty-dispatcher'
 
-import {
-  pendingSpawnByPaneKey,
-  pendingSpawnGenerationByPaneKey,
-  recordPtyConnectDiagnostic
-} from './pty-connect-limits'
+import { pendingSpawnByPaneKey, recordPtyConnectDiagnostic } from './pty-connect-limits'
 import {
   canRestorePairedParkedTerminal,
   isSessionOwnedByWorktree
@@ -154,23 +150,20 @@ export function runDeferredSessionReattachChoice(session: ConnectPanePtySession)
     session.allowInitialIdleCacheSeed = false
     const pendingSpawn = pendingSpawnByPaneKey.get(session.pendingSpawnKey)
     if (pendingSpawn) {
-      const pendingGeneration = pendingSpawnGenerationByPaneKey.get(session.pendingSpawnKey)
-      if (pendingGeneration !== undefined && pendingGeneration !== session.tabGeneration) {
-        recordPtyConnectDiagnostic(`pane=${session.pane.id} -> STALE PENDING SPAWN`)
-        session.startFreshSpawn()
-        scheduleRuntimeGraphSync()
-        return
-      }
       recordPtyConnectDiagnostic(`pane=${session.pane.id} -> PENDING SPAWN`)
+      const generation = session.transportStreamGeneration
       void pendingSpawn
-        .then((spawnedPtyId) => {
-          if (session.disposed) {
+        .then((outcome) => {
+          if (session.disposed || generation !== session.transportStreamGeneration) {
             return
           }
           if (session.transport.getPtyId()) {
             return
           }
-          if (!spawnedPtyId) {
+          if (outcome.kind !== 'connected') {
+            if (outcome.kind !== 'failed') {
+              return
+            }
             // Why: React StrictMode can mount+spawn then immediately remount; if the first mount produced no PTY id,
             // the remounted pane must issue its own spawn instead of attaching to a completed-but-empty promise (a dead surface).
             if (!isWebTerminalSurfaceTabId(session.deps.tabId)) {
@@ -185,6 +178,7 @@ export function runDeferredSessionReattachChoice(session: ConnectPanePtySession)
             }
             return
           }
+          const spawnedPtyId = outcome.ptyId
           session.clearPaneMode2031State()
           session.clearHiddenOutputRestoreState()
           const outputCallbacks = session.captureTransportOutputCallbacks(session.reportError, null)

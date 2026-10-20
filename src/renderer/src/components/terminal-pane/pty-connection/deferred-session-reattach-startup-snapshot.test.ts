@@ -21,6 +21,7 @@ function createSession() {
     pane: { id: 1 },
     transport,
     disposed: false,
+    acceptPaneRestore: (outcome: unknown) => outcome,
     transportStreamGeneration: 1,
     deps: { paneTransportsRef: { current: new Map([[1, transport]]) } },
     buildColdRestoreAgentResumeStartup: () => startup,
@@ -28,7 +29,12 @@ function createSession() {
     beginReattachLiveDataDeferral: vi.fn(),
     finishReattachLiveDataDeferral: vi.fn(),
     shouldDeclareHiddenAtSpawn: () => true,
-    handleReattachResult: vi.fn().mockResolvedValue(true),
+    handleReattachResult: vi.fn().mockResolvedValue({
+      kind: 'connected',
+      ptyId: 'restored-pty',
+      generation: 1,
+      agentResumed: true
+    }),
     reportError: vi.fn(),
     cols: 80,
     rows: 24,

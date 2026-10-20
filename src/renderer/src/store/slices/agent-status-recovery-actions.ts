@@ -71,7 +71,8 @@ export function createAgentStatusRecoveryActions(
       })
     },
 
-    clearSleepingAgentSession: (paneKey) => clearSleepingAgentSessionsByPaneKey([paneKey]),
+    clearSleepingAgentSession: (paneKey, consumption) =>
+      clearSleepingAgentSessionsByPaneKey([paneKey], consumption),
 
     rememberSleepingAgentSession: (record) => {
       set((s) =>

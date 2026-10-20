@@ -138,7 +138,9 @@ export function installAgentIdleWorkingHandlers(session: ConnectPanePtySession):
   // started by the pane instance it replaced, while StrictMode remounts keep
   // the same generation and may still share their in-flight spawn.
   session.pendingSpawnKey = JSON.stringify([session.cacheKey, session.tabGeneration])
-  session.settlePaneAttachAttempt = (status: 'success' | 'failed' | 'timed-out'): void => {
+  session.settlePaneAttachAttempt = (
+    status: 'success' | 'failed' | 'timed-out' | 'superseded'
+  ): void => {
     settleTerminalPaneRecovery(session.deps.tabId, session.terminalRecoveryGeneration, status)
   }
 }

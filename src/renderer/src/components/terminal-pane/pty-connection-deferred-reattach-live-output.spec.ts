@@ -378,24 +378,22 @@ export function registerPtyConnectionDeferredReattachLiveOutputTests(): void {
       expect(pane.terminal.buffer.active.viewportY).toBe(100)
     })
 
-    it('does not fresh-spawn after a dead deferred session delivers its buffered exit', async () => {
+    it.each(['tab-pty', undefined])('delivers ended output: %s', async (restoredId) => {
       const { connectPanePty } = await import('./pty-connection')
       const transport = createMockTransport('tab-pty')
       transport.connect.mockImplementation(
         async ({ sessionId, callbacks }: { sessionId?: string; callbacks?: ConnectCallbacks }) => {
-          if (!sessionId) {
-            return 'unexpected-fresh-pty'
-          }
           callbacks?.onData?.('dead-session-final-frame')
-          return { id: sessionId, exitedBeforeAttach: true }
+          return { id: sessionId ?? 'tab-pty', exitedBeforeAttach: true }
         }
       )
       transportFactoryQueue.push(transport)
       const pane = createPane(1)
       const { writes } = captureCallbackTerminalWrites(pane)
+      mockStoreState.tabsByWorktree['wt-1'][0].ptyId = null
       const deps = createDeps({
         restoredLeafId: LEAF_1,
-        restoredPtyIdByLeafId: { [LEAF_1]: 'tab-pty' }
+        restoredPtyIdByLeafId: { [LEAF_1]: restoredId }
       })
 
       connectPanePty(pane as never, createManager(1) as never, deps as never)

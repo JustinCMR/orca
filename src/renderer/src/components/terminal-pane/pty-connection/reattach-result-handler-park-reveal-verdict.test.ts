@@ -161,7 +161,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
       serializeHiddenOutputSnapshot: probeAnswers({ kind: 'snapshot', snapshot: HOST_IMAGE })
     })
 
-    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(true)
+    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+      kind: 'connected'
+    })
 
     const ctx = decidedContext()
     expect(ctx.prefetchedParkModelSnapshot).toBe(HOST_IMAGE)
@@ -177,7 +179,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
       serializeHiddenOutputSnapshot: probeAnswers({ kind: 'retry-worthy', source: 'host' })
     })
 
-    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(true)
+    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+      kind: 'connected'
+    })
 
     const ctx = decidedContext()
     expect(ctx.prefetchedParkModelSnapshot).toBeNull()
@@ -205,7 +209,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
     })
     bag.transport.serializeBufferOutcome = vi.fn()
 
-    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(true)
+    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+      kind: 'connected'
+    })
 
     expect(decidedContext().prefetchedParkModelSnapshot).toBeNull()
     expect(bag.retryUnverifiableParkRevealSnapshot).toHaveBeenCalledExactlyOnceWith(
@@ -227,7 +233,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
     }))
     bindSerializeHiddenOutputSnapshot(bag.session)
 
-    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(true)
+    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+      kind: 'connected'
+    })
 
     expect(bag.transport.serializeBufferOutcome).toHaveBeenCalledOnce()
     const ctx = decidedContext()
@@ -247,7 +255,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
       })
     })
 
-    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(true)
+    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+      kind: 'connected'
+    })
 
     expect(decidedContext().prefetchedParkModelSnapshot).toBeNull()
     expect(bag.structuralRun).not.toHaveBeenCalled()
@@ -277,7 +287,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
     async (kind) => {
       const bag = buildParkRevealSession({ serializeHiddenOutputSnapshot: probeAnswers({ kind }) })
 
-      await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(true)
+      await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+        kind: 'connected'
+      })
 
       const ctx = decidedContext()
       expect(ctx.prefetchedParkModelSnapshot).toBeNull()
@@ -311,7 +323,9 @@ describe('handleReattachResult park-reveal snapshot verdict', () => {
       return { kind: 'retry-worthy', source: 'host' }
     })
 
-    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toBe(false)
+    await expect(bag.session.handleReattachResult(PARK_REVEAL_RESULT)).resolves.toMatchObject({
+      kind: 'superseded'
+    })
 
     expect(mocks.capturedContexts).toHaveLength(0)
     expect(bag.retryUnverifiableParkRevealSnapshot).not.toHaveBeenCalled()
@@ -367,25 +381,23 @@ describe('handleReattachResult empty reattach under a hibernation note', () => {
 
     await expect(
       bag.session.handleReattachResult(PARK_REVEAL_RESULT, staleId, startup)
-    ).resolves.toBe(true)
+    ).resolves.toMatchObject({ kind: 'connected' })
 
     expect(bag.transport.disconnect).not.toHaveBeenCalled()
     expect(bag.session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
     expect(bag.session.setPanePtyFitBinding).toHaveBeenCalledWith(REMOTE_PTY_ID)
   })
 
-  it('retires an empty local fresh-spawn adoption and resumes the provider session', async () => {
+  it('retires an empty local adoption and returns the continuation decision', async () => {
     const bag = buildParkRevealSession({ mountFollowsTerminalPark: false })
 
     await expect(
       bag.session.handleReattachResult({ id: 'local-pty-1', isReattach: true }, null, startup)
-    ).resolves.toBe(false)
+    ).resolves.toEqual({ kind: 'continue-fresh' })
 
     expect(bag.transport.disconnect).toHaveBeenCalledOnce()
     expect(bag.session.syncPanePtyLayoutBinding).toHaveBeenCalledWith(null)
-    expect(bag.session.startFreshColdRestoreAgentResume).toHaveBeenCalledExactlyOnceWith(startup, {
-      forceBlankRestoredViewport: true
-    })
+    expect(bag.session.startFreshColdRestoreAgentResume).not.toHaveBeenCalled()
     expect(bag.session.setPanePtyFitBinding).not.toHaveBeenCalled()
   })
 })

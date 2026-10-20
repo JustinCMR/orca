@@ -698,8 +698,7 @@ describe('connectPanePty', () => {
     })
 
     connectPanePty(pane as never, manager as never, deps as never)
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsyncTicks(20)
 
     expect(transport.connect).toHaveBeenNthCalledWith(
       1,

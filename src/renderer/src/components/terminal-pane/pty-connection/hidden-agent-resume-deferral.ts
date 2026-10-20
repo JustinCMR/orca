@@ -5,8 +5,7 @@ import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime-pty-i
 import { takeSleepingAgentWakeRequest } from '@/lib/sleeping-agent-wake-requests'
 import { holdPaneResumeUntilShown, releasePaneResumeHold } from '@/lib/pane-spawn-deferral-registry'
 import { startDeferredSessionReattach } from './deferred-session-reattach-connect'
-import { pendingSpawnByPaneKey } from './pty-connect-limits'
-import type { ColdRestoreAgentResumeStartup } from './fresh-spawn-types'
+import type { ColdRestoreAgentResumeStartup, PaneRestoreOutcome } from './fresh-spawn-types'
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
 
 /**
@@ -17,7 +16,7 @@ import type { ConnectPanePtySession } from './connect-pane-pty-session'
 export function deferHiddenAgentResume(
   session: ConnectPanePtySession,
   startup: ColdRestoreAgentResumeStartup | null,
-  wake?: () => Promise<string | null | undefined>
+  wake?: () => Promise<PaneRestoreOutcome>
 ): boolean {
   const recordEntry = startup?.sleepingRecordEntry
   if (
@@ -33,43 +32,22 @@ export function deferHiddenAgentResume(
     session.hiddenAgentResumeReleased = true
     return false
   }
-  const start: () => Promise<string | null | undefined> = wake ?? session.wakeHibernatedAgentPane
+  const start: () => Promise<PaneRestoreOutcome> = wake ?? session.wakeHibernatedAgentPane
   const target = {
     // Why the current id: the wake must drop if another flow binds a PTY first.
     ptyId: session.transport.getPtyId(),
     record: recordEntry.record,
-    wake: (): Promise<string | null | undefined> => {
+    wake: (): Promise<PaneRestoreOutcome> => {
       session.hiddenAgentResumeReleased = true
-      const started = start()
-      const generation = session.transportStreamGeneration
-      return started.then((ptyId) => {
-        if (!wake && generation !== session.transportStreamGeneration) {
-          return undefined
-        }
-        // Why: retain ownership through attachment and any authorized fresh fallback.
-        if (
-          !session.disposed &&
-          session.deps.paneTransportsRef.current.get(session.pane.id) === session.transport &&
-          session.transport.getPtyId() !== null &&
-          session.hiddenAgentResumeHeldTarget === target
-        ) {
-          for (const message of [
-            'terminal_reattach_unverifiable',
-            'terminal_pane_owner_unverified'
-          ]) {
-            session.deps.onPtyErrorClearedRef?.current?.(session.pane.id, message)
-          }
-          releaseHiddenAgentResumeHold(session)
-        }
-        return ptyId
-      })
+      return start()
     }
   }
   session.hibernatedWakeTarget = target
   session.hiddenAgentResumeHeldTarget = target
   // Why: the cleared layout binding no longer proves ownership, so an activation sweep would relaunch the record.
-  // Why each clause: armed, woken, or its reattach or fallback still connecting — until a PTY binds.
+  // The armed target or its claimed operation owns the record until binding.
   const claimKey = getProviderSessionClaimKey(recordEntry.record)
+  const previousHold = session.hiddenAgentResumeHold
   session.hiddenAgentResumeHold = (): boolean => {
     const current = session.getSleepingRecordForPane(useAppStore.getState())?.record
     return (
@@ -80,16 +58,14 @@ export function deferHiddenAgentResume(
       session.hiddenAgentResumeHeldTarget !== null &&
       session.transport.getPtyId() === null &&
       (session.hibernatedWakeTarget === session.hiddenAgentResumeHeldTarget ||
-        session.hibernatedWakeInFlightClaimKey !== null ||
-        session.transportConnectInFlightSince !== null ||
-        pendingSpawnByPaneKey.has(session.pendingSpawnKey))
+        session.hibernatedWakeInFlightClaimKey === claimKey)
     )
   }
   if (
     session.hiddenAgentResumeHoldKey &&
     session.hiddenAgentResumeHoldKey !== recordEntry.paneKey
   ) {
-    releasePaneResumeHold(session.hiddenAgentResumeHoldKey, session.hiddenAgentResumeHold)
+    releasePaneResumeHold(session.hiddenAgentResumeHoldKey, previousHold)
   }
   session.hiddenAgentResumeHoldKey = recordEntry.paneKey
   holdPaneResumeUntilShown(recordEntry.paneKey, session.hiddenAgentResumeHold)
@@ -137,13 +113,7 @@ export function startDeferredSessionReattachUnlessHiddenAgentResume(
     const deferred = deferHiddenAgentResume(
       session,
       session.buildColdRestoreAgentResumeStartup(),
-      async () => {
-        const outcome = await reattach()
-        if (outcome.generation !== session.transportStreamGeneration) {
-          return undefined
-        }
-        return outcome.reopened ? session.transport.getPtyId() : null
-      }
+      reattach
     )
     if (!deferred) {
       return reattach()
@@ -152,6 +122,6 @@ export function startDeferredSessionReattachUnlessHiddenAgentResume(
     if (unverifiable) {
       settleSpawnThatLeftPaneUnbound(session, 'reattach-unverifiable')
     }
-    return { reopened: false, agentResumed: false }
+    return { kind: 'held', generation: session.transportStreamGeneration }
   })
 }

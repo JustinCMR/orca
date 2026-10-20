@@ -120,9 +120,11 @@ export function useTerminalPaneTitleState(controller: TerminalPaneFoundation) {
   }, [])
   const onPtyRecoveryStateRef = useRef(
     (paneId: number, state: PtyTransportRecoveryState | null) => {
-      setPtyRecoveryStatesByPaneId((previous) =>
-        updateTerminalRemoteRuntimeRecoveryUiState(previous, paneId, state)
-      )
+      setPtyRecoveryStatesByPaneId((previous) => {
+        const next = updateTerminalRemoteRuntimeRecoveryUiState(previous, paneId, state)
+        // A completed held wake changes connection presentation while preserving stored errors.
+        return state?.phase === 'connected' ? { ...next } : next
+      })
     }
   )
 
