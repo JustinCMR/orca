@@ -168,13 +168,14 @@ describe.skipIf(!realClaudeAvailable)('Claude structured real CLI options', () =
         }
 
         // The production send path: list_models, set_model, apply_flag_settings and get_settings.
+        // `ranOptions` is what the chat records as the picks this message actually ran with.
         const firstTurn = events.length
         await expect(
           send('real-cli-options-1', 'Reply with exactly: OK. Do not use any tools.', 1, {
             model: pick.id,
             effort: level
           })
-        ).resolves.toEqual({ state: 'admitted' })
+        ).resolves.toEqual({ state: 'admitted', ranOptions: { model: pick.id, effort: level } })
         expect(await until(() => results(firstTurn).length > 0, 90_000)).toBe(true)
         expect(results(firstTurn)[0]).toMatchObject({ subtype: 'success', is_error: false })
         expect(inits(firstTurn)[0]?.model).toBe(pick.resolvedModel)
@@ -214,7 +215,9 @@ describe.skipIf(!realClaudeAvailable)('Claude structured real CLI options', () =
           events: record.sink
         })
         await claudeStartupSettled(adapter, SESSION_ID)
-        await expect(send('real-cli-options-2', 'Reply with exactly: OK.', 2)).resolves.toEqual({
+        await expect(
+          send('real-cli-options-2', 'Reply with exactly: OK.', 2)
+        ).resolves.toMatchObject({
           state: 'admitted'
         })
         expect(await until(() => results(resumedTurn).length > 0, 90_000)).toBe(true)
